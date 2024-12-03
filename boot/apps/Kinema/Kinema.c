@@ -18,7 +18,7 @@
 
 static unsigned int seed = 123456789; 
 
-
+// My custom srand implemntation (its unused for now)
 void srand_custom(unsigned int newSeed) {
     seed = newSeed;
 }
@@ -42,7 +42,7 @@ int rand_range(int low, int high) {
     return (rand_custom() % range) + low;
 }
 
-
+// abs()
 int abs(int value) {
     return (value < 0) ? -value : value;
 }
@@ -135,6 +135,7 @@ int Kinema(int process_inst) {
     DrawCircle(params[WIN_X] + params[BALL_X], 
                params[WIN_Y] + params[BALL_Y], 
                ballRadius, 250, 40, 40);
+    
 
     DrawRect(params[WIN_X], params[WIN_Y] + 450, 300, 20, 220, 160, 60);
 
