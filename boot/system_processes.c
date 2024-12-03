@@ -17,7 +17,7 @@ void CollectProcess() {
 
     priority = 5;
 
-    // Priority setting for window processes
+    // Priority setting for window processes (focus windows basically)
     while (priority >= 0) {
         i = curr_mouse_target;
         if (left_clicked == true &&
