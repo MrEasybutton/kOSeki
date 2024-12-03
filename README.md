@@ -24,7 +24,9 @@ kOSeki uses VBE mode 117h (That's 1024 x 768) which supports 64000 colours! It w
 ### 🪟 Window System
 
 kOSeki has a robust window system with draggable and closable windows that house its apps. Due to memory constraints, the maximum number of simultaneous window instances you can open is 7. Beyond that, issues occur (maintenance in progress). 
+
 At 8 windows, the background goes black and the latest window instance turns black. This is reversible by simply closing some apps and opening the Settings (labeled SYST). Then you can change the background theme back to one of the options. At the 9th window the OS will freeze profusely and trap the mouse at (0, 0). I genuinely do not know why this specifically happens but I'll find out. 
+
 Try to stay below 4 simultaneous windows for best performance.
 
 ### ⏱️ Kronii's Stopwatch
