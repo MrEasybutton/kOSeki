@@ -54,7 +54,7 @@ void CollectProcess() {
     }
 }
 
-void NullProcess(int process_inst) {
+int NullProcess(int process_inst) {
     return 0;
 }
 

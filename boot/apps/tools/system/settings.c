@@ -28,16 +28,17 @@ int Settings(int process_inst) {
     if (closeClicked == true)
         CloseProcess(process_inst);
 
-    char text[] = "Dark\0";
-    char text1[] = "Light\0";
+    char dark[] = "Dark\0";
+    char light[] = "Light\0";
+    char info[] = "kOSeki v12.2024.P1\0";
     char refresh[] = "Refresh Screen\0";
 
     char BG_Label[] = "Background Theme";
     DrawText(getFontCharacter, font_font_width, font_font_height, BG_Label, x + 10, y + 30, 200, 200, 200);
 
     if (
-        DrawButton(x + 10, y + 60, 60, 30, 100, 80, 110,
-            text, 200, 180, 210, process_inst, 200, 180, 210
+        DrawButton(x + 10, y + 60, 60, 30, 80, 70, 100,
+            dark, 200, 180, 210, process_inst, 200, 180, 210
     ) == true) {
         bg_r = 109;
         bg_g = 88;
@@ -45,13 +46,15 @@ int Settings(int process_inst) {
     }
 
     if (
-        DrawButton(x + 120, y + 60, 60, 30, 100, 80, 110,
-            text1, 200, 180, 210, process_inst, 200, 180, 210
+        DrawButton(x + 120, y + 60, 60, 30, 90, 80, 100,
+            light, 200, 180, 210, process_inst, 200, 180, 210
     ) == true) {
         bg_r = 200;
         bg_g = 182;
         bg_b = 201;
     }
+
+    DrawText(getFontCharacter, font_font_width, font_font_height, info, x + 10, y + 140, 205, 200, 210);
 
     if (
         DrawButton(x + 10, y + 100, 170, 30, 100, 80, 110,
@@ -59,8 +62,6 @@ int Settings(int process_inst) {
     ) == true) {
         Clear(0,0,0);
     }
-
-
 
     return 0;
 }

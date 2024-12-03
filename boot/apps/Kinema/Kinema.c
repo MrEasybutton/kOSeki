@@ -1,11 +1,12 @@
 #include "../lib_include.h"
 #include <stdbool.h>
 
-
+// Window coords so ball doesn't exceed bounds
 #define WIN_X         0
 #define WIN_Y         1
 #define WIN_WIDTH     2
 #define WIN_HEIGHT    3
+
 #define BALL_X        5
 #define BALL_Y        6
 #define BALL_VX       7
@@ -16,6 +17,7 @@
 #define DAMPING       0.7   
 #define MIN_VELOCITY  1     
 
+// Placeholder seed
 static unsigned int seed = 123456789; 
 
 // My custom srand implemntation (its unused for now)
@@ -42,29 +44,26 @@ int rand_range(int low, int high) {
     return (rand_custom() % range) + low;
 }
 
-// abs()
+// absolute func
 int abs(int value) {
     return (value < 0) ? -value : value;
 }
 
-
+// Note: this is total trace points across all windows
 #define MAX_TRACE_POINTS 200
 int tracePoints[MAX_TRACE_POINTS][2];
 int traceCount = 0;
 bool traceEnabled = false;
 
-
+// Track movement to move tracepoints with the window
 int previousWinX = 0;
 int previousWinY = 0;
 
 int Kinema(int process_inst) {
-    int *params = &iparams[process_inst * procparamlen]; 
-
-    
+    int *params = &iparams[process_inst * procparamlen];
     int offsetX = params[WIN_X] - previousWinX;
     int offsetY = params[WIN_Y] - previousWinY;
 
-    
     previousWinX = params[WIN_X];
     previousWinY = params[WIN_Y];
 
@@ -73,7 +72,6 @@ int Kinema(int process_inst) {
         tracePoints[i][0] += offsetX;
         tracePoints[i][1] += offsetY;
     }
-
     
     int closeClicked = DrawWindow(
         &params[WIN_X], &params[WIN_Y], &params[WIN_WIDTH], &params[WIN_HEIGHT],

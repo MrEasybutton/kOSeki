@@ -5,8 +5,8 @@
 
 typedef struct {
     uint32_t stopwatch_time_seconds; 
-    uint32_t tick_counter;           
-    bool stopwatch_running;         
+    uint32_t tick_counter;           // Temporary (it lags)
+    bool stopwatch_running;          
 } StopwatchData;
 
 int Stopwatch(int process_inst) {
@@ -27,9 +27,7 @@ int Stopwatch(int process_inst) {
         &iparams[process_inst * procparamlen + 1],
         &iparams[process_inst * procparamlen + 2],
         &iparams[process_inst * procparamlen + 3],
-        *r,
-        *g,
-        *b,
+        *r, *g, *b,
         &iparams[process_inst * procparamlen + 9],
         process_inst);
 
@@ -39,11 +37,9 @@ int Stopwatch(int process_inst) {
     
     char ProgramTitle[] = "Kronii's Stopwatch";
     DrawText(getFontCharacter, font_font_width, font_font_height, ProgramTitle, x + 5, y, 0, 0, 0);
-
-
     
     if (data->stopwatch_running) {
-        if (++data->tick_counter >= 10) { 
+        if (++data->tick_counter >= 10) { // Again, temporary. Works best with 1 window open. Do you reckon decreasing the tick threshold with every subsequent open window will work?
             data->tick_counter = 0;      
             data->stopwatch_time_seconds++; 
         }
