@@ -19,6 +19,6 @@ extern int iparams[100];
 extern int ProcessLen;
 
 void CloseProcess(int process_inst);
-void NullProcess(int process_inst);
+int NullProcess(int process_inst);
 
 #endif 

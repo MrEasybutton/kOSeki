@@ -37,6 +37,8 @@ extern void LoadIDT();
 void HandleISR1();
 void HandleISR12();
 void RemapPIC();
+void HandleMouseInterrupt();
+void HandleMousePacket();
 
 
 struct IDTElement {
