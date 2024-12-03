@@ -50,7 +50,9 @@ Adjust your kOSeki theme and refresh your screen in Settings. Take a look at the
 ### 🎨 Icons
 
 This was probably the most painful part of kOSeki's early development. My first method relied on converting the image into an array with every 3 elements being the RGB values of a pixel. How naive I was. Beyond around 64 elements it just doesn't appear onscreen. 
+
 So my second try involved those arrays once again, only now I split the image into 16 arrays of 16 elements each. This in fact did work beautifully. However, with how kOSeki is built, it doesn't leave much memory to write anything else. 
+
 My last endeavour relies on binary code in a neat array of 16 elements at maximum. To store several 'images' in the header and call them easily, I placed each array in a larger 2D array. Hence, as the last param of the DrawIconBrand function, you can specify the index of said array and retrieve the image from that index. With a fraction of the memory usage, you get quaint single-colour pixel art. Is it tedious to create images and less attractive than a proper image? Definitely, but at least it has a cute charm to it.
 
 Shown: Previous method vs Current method. A tragic loss, but worth its salt. 
