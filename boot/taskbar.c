@@ -62,7 +62,7 @@ int TaskbarSystem(int process_inst) {
     
     y_offset += button_height + marginal_offset;  
 
-    char AppSettingsDesc[] = "SYST\0"; // Settingss 
+    char AppSettingsDesc[] = "SYST\0"; // Settings 
     if (DrawButton(5, y_offset, taskbar_width - 10, button_height, 91, 53, 145, AppSettingsDesc, 220, 210, 230, process_inst, 0, 140, 0) == true) {
         process[ProcessLen].priority = 0;
         process[ProcessLen].process_inst = ProcessLen;
