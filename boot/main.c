@@ -3,6 +3,26 @@
 #include "taskbar.c"
 #include "apps/process_system.h"
 
+
+int tick_load = 0;
+
+void Greet() { // Bogus Startup Screen
+    VBEInfoBlock* VBE = (VBEInfoBlock*) VBEInfoAddress;
+	int rect_rollup = VBE->y_resolution - (VBE->y_resolution / 10) * tick_load;
+	int text_dec = 15 - tick_load;
+
+    DrawRect(0, 0, VBE->x_resolution, rect_rollup, 0, 0, 0);
+
+	DrawIconBrand(VBE->x_resolution / 2 - 160, VBE->y_resolution / 2 - 160, 10, text_dec - 10, 200, 180, 210, 2);
+    if (tick_load < 15) {
+        tick_load++;
+    }
+
+    char LoadMessage[] = "Loading kOSeki...";
+    DrawText(getFontCharacter, font_font_width, text_dec, LoadMessage, 100, 120, 220, 218, 221);
+}
+
+
 int start() {
     VBEInfoBlock* VBE = (VBEInfoBlock*) VBEInfoAddress;
 
@@ -46,6 +66,7 @@ int start() {
         UpdateMouse();
 	    UpdateIDT();
         CollectProcess();
+		Greet();
         Refresh();
     }
 }
