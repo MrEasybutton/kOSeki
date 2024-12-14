@@ -3,9 +3,9 @@ all: bootloader
 # Build process
 bootloader:
 	# --------------
-	# Assemble bootloader
+	# Assemble Stage 1 
 	# --------------
-	nasm boot/boot.asm -f bin -o boot/bin/boot.bin
+	nasm boot/boot_S1.asm -f bin -o boot/bin/boot.bin
 	
 	# --------------
 	# Build + Link kernel
