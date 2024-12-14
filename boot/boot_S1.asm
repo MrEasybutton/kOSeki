@@ -1,4 +1,4 @@
-[org 0x7C00]           ; Starting address
+[org 0x7C00:0000]      ; Starting address
 [bits 16]              ; Real mode
 
 section .code
@@ -22,9 +22,9 @@ section .code
     mov ds, ax         ; Set DS and ES to zero
     mov es, ax
 
-    mov bx, 0x9000     ; Address for kernel load sector  
+    mov ebx, 0x9000    ; Address for kernel load sector  
     mov ah, 0x02       ; Read sectors
-    mov al, 62         ; SECTOR COUNT [Change carefully]
+    mov al, 70         ; SECTOR COUNT [Change carefully]
     mov ch, 0x00       ; Cyl no.
     mov dh, 0x00       ; Head no.
     mov cl, 0x02       ; Sector no.
@@ -61,7 +61,7 @@ gdt_null_descriptor:
     dd 0x00
 
 gdt_code_seg:
-    dw 0xeeee          ; Code_seg limit            
+    dw 0xffff          ; Code_seg limit            
     dw 0x0000          ; 16 bits   
     db 0x00            ; 8 bits
     db 10011010b              
@@ -69,7 +69,7 @@ gdt_code_seg:
     db 0x00            ; 8 bits
 
 gdt_data_seg:
-    dw 0xeeee                 
+    dw 0xffff                 
     dw 0x0000                 
     db 0x00                   
     db 10010010b              

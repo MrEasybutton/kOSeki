@@ -18,7 +18,7 @@ IDTDesc:
 
 
 isr1:
-    pusha           ; t
+    pusha           
     call HandleISR1 ; Call handler ISR1
     popa            ; Restore registers
     iret            ; Return from interrupt
