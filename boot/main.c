@@ -1,30 +1,38 @@
 #include "graphics.h"
+#include "filesystem.h"
+#include "text_input.h"
 #include "app_loader.h"
 #include "taskbar.c"
 #include "apps/process_system.h"
+#include "startup_screen.c"
+#include "time.h"
+#include "kronii.c"
 
 int start() {
     VBEInfoBlock* VBE = (VBEInfoBlock*) VBEInfoAddress;
 
-    mx = VBE->x_resolution / 2;		// Mouse goes to middle of screen x
-    my = VBE->y_resolution / 2;		// Mouse goes to middle of screen y
+    STARTUP(); // to remind you this is extremely useless but it looks cool so if you dont like it just comment it out
 
-	// BG Colour Initial Settings
-	bg_r = 200; 
-	bg_g = 182;
-	bg_b = 201;
+    fs_init();
+    fs_mount();
+
+    init_text_input_system();
+
+    mx = VBE->x_resolution / 2;
+    my = VBE->y_resolution / 2;
+
+	bg_r1 = 204; bg_g1 = 190; bg_b1 = 212; bg_r2 = 210; bg_g2 = 182; bg_b2 = 216;
+	current_size = 4;
 
 	base = (unsigned int) &isr1;
 	base12 = (unsigned int) &isr12;
 
-    mspeed = 10;
+    mspeed = 7;
 
-	// BG Colour Process, it clears the screen with the specific colour (bg_r, bg_g, bg_b)
 	process[ProcessLen].priority = 0;
 	process[ProcessLen].function = &ClearFunc;
 	ProcessLen++;
 
-	// Taskbar Process, wraps around y_res. By modifying the taskbar function and editing params 2 and 3, you can get other taskbar alignments.
 	process[ProcessLen].priority = 3;
 	process[ProcessLen].function = &TaskbarSystem;
 	process[ProcessLen].process_inst = ProcessLen;
@@ -35,16 +43,18 @@ int start() {
 	iparams[ProcessLen * procparamlen + 4] = 1;
 	ProcessLen++;
 
-
-	// Mouse Function
 	process[ProcessLen].priority = 5;
 	process[ProcessLen].function = &MouseFunc;
 	ProcessLen++;
+	
+	process[ProcessLen].priority = 1;
+	process[ProcessLen].function = &Clock;
+	ProcessLen++;
 
-
+	UpdateIDT();
+	UpdateMouse();
+    
     while(1) {
-        UpdateMouse();
-	    UpdateIDT();
         CollectProcess();
         Refresh();
     }
