@@ -4,6 +4,7 @@
 #define process_type_void 0
 #define process_type_string_buffer 1
 #define procparamlen 10
+#define MAX_PROCESSES 256
 
 struct Process {
     int priority;
