@@ -1,10 +1,22 @@
 import freetype
+import sys
+import os
+import argparse
 
-font_filename = 'boot/utilities/fonts/Kalnia.ttf'
-font_name = 'font'
+parser = argparse.ArgumentParser(description='Convert a TTF font to a C array for kOSeki')
+parser.add_argument('--font', default='Fuzzy.ttf', help='Name of the TTF font file in the boot/utilities/fonts directory')
+parser.add_argument('--output', default=None, help='Output path (defaults to boot/font.c)')
+
+args = parser.parse_args()
+
+font_filename = f'boot/utilities/fonts/{args.font}' if not os.path.isabs(args.font) else args.font
+font_name = "font"
 
 font_width = 10
 font_height = 15
+
+print(f"Converting {font_filename} to C array with name '{font_name}'")
+print(f"Font dimensions: {font_width}x{font_height}")
 
 face = freetype.Face(font_filename)
 face.set_pixel_sizes(font_width, font_height)
@@ -44,7 +56,10 @@ for i in range(ord(' '), 127):
     representation = extra + representation
     characters.append(representation)
 
-with open('boot/utilities/fonts/characters_' + font_name + '.c', 'w') as file:
+output_path = args.output if args.output else f'boot/font.c'
+utility_output_path = f'boot/utilities/fonts/backup_{font_name}.c'
+
+with open(utility_output_path, 'w') as file:
     count = 0
     array = 0
     file.write(f'int get{font_name.title()}Character(int index, int y) {{\n')
@@ -74,4 +89,18 @@ with open('boot/utilities/fonts/characters_' + font_name + '.c', 'w') as file:
     file.write(f'const int font_{font_name.lower()}_width = {font_width};\n')
     file.write(f'const int font_{font_name.lower()}_height = {font_height};\n')
 
-# Now here's a cool tool. It converts your TrueType font into a C array that can be used as a font in kOSeki. Feel free to try it out. You might need to tweak the array name a bit.
+# Now copy the font code to the main output file (usually boot/font.c)
+print(f"Generated font source saved to {utility_output_path}")
+
+# Read the generated code to copy to main output
+with open(utility_output_path, 'r') as source_file:
+    font_code = source_file.read()
+
+# Create the main output file with proper headers
+with open(output_path, 'w') as output_file:
+    output_file.write('// Font array is generated from ' + os.path.basename(font_filename) + '\n')
+    output_file.write('// SIZE: ' + str(font_width) + 'x' + str(font_height) + '\n\n')
+    output_file.write(font_code)
+
+print(f"Font source copied to {output_path}")
+print("Font conversion complete!")

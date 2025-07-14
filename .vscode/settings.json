@@ -56,12 +56,9 @@
   "C_Cpp_Runner.showCompilationTime": false,
   "C_Cpp_Runner.useLinkTimeOptimization": false,
   "C_Cpp_Runner.msvcSecureNoWarnings": false,
+  "makefile.configureOnOpen": false,
   "files.associations": {
-    "process_system.h": "c",
-    "app_loader.h": "c",
-    "graphics.h": "c",
-    "Kinema.h": "c",
-    "icon_library.h": "c"
-  },
-  "C_Cpp.errorSquiggles": "enabled"
+    "lib_include.h": "c",
+    "string": "cpp"
+  }
 }
