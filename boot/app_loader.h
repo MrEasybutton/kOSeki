@@ -1,3 +1,5 @@
-#include "apps/tools/legacy_test/stopwatch.h"
 #include "apps/tools/system/settings.h"
-#include "apps/Kinema/Kinema.h"
+#include "apps/Chaser/Chaser.h"
+#include "apps/Novella/Novella.h"
+#include "apps/WAHtercolour/WAHtercolour.h"
+#include "apps/CaseFiles/CaseFiles.h"
