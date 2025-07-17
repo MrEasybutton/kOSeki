@@ -11,6 +11,8 @@
 > The next update will be even bigger. While v2 is mostly to polish the current somewhat naive implementation, v3 (tentative) will have the long-postponed backend updates such as an actual filesystem, way less lag, etc. <br>
 > As always, your feedback is much appreciated! :D
 
+> Update 17/7/25: It seems that the rock herself has acknowledged kOSeki on X! An unexpected but welcome surprise 🗿
+
 ### **HIGHLIGHTS**
 
 - Robust GUI now with 118h -- 16 million beepin colours!
