@@ -1,0 +1,17 @@
+OFFCOLLAB PON;
+
+PON.window ("hi", 200, 300);
+
+RUFF blkkk = PON.rgb(0, 0, 0);
+
+PON.rect(0, 0, 196, 276, PON.rgb(204, 176, 232));
+
+PON.text("rock rock!", 6, 2, blkkk, FLUFFY);
+
+RUFFIAN action() {
+  PON.text("thanks!!", 6, 96, PON.rgb(102, 0, 167), FUZZY);
+}
+
+PON.button("click me pls", 6, 42, 184, 32, action);
+
+BAU "init done";

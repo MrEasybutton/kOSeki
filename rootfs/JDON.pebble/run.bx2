@@ -1,0 +1,12 @@
+OFFCOLLAB PON;
+
+PON.window ("JDON my soul!!", 372, 280);
+
+PON.rect(0, 0, 368, 256, PON.rgb(200, 20, 8));
+
+RUFF ye = PON.rgb(240, 232, 125);
+
+PON.text("g'day mate!", 6, 2, ye, FUZZY);
+PON.text("haven't had brekkie yet,", 6, 20, ye, FUZZY);
+PON.text("so might go on a Maccas run soon!", 6, 38, ye, FUZZY);
+PON.text("my shout!!", 6, 56, ye, FUZZY); 

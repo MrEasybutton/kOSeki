@@ -1,0 +1,27 @@
+RUFF message = "BAU BAU!";
+BAU message;
+
+RUFF count = 1;
+BAU count + 8* 8;
+
+count = count * 22;
+
+FUWA (count > 5) {
+BAU "test message:";
+BAU message;
+} MOCO {
+BAU "hello";
+}
+
+RUFF i = 1;
+PERO (i < 5) {
+BAU i;
+i = i + 1;
+}
+
+BAU "let's test message again: ";
+BAU message;
+
+
+
+RUFF fur = FLUFFY; BAU fur;

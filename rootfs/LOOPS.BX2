@@ -1,0 +1,15 @@
+BAU "hi Ruffians!";
+RUFF bork = "BAU BAU!";
+BAU bork;
+
+RUFF i = 5;
+PONDE (5) 
+  BAU "--";
+  BAU i; i = i - 1;
+RING
+BAU "--";
+
+FUWA (i == 0) {
+  BAU "bye Ruffians!!";
+} MOCO BAU "whaet??";  
+
