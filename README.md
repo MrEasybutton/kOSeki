@@ -231,7 +231,7 @@ While the games are technically multiplayer (using an MQTT broker to facilitate 
 
 Your prayers have been answered. DOOM is a Raora-themed DOOM-like game, featuring a climactic showdown against Shiori in a high-octane FPS-style raycasted experience. (theres no limit to the glaze)
 
-![DOOM](images_readme/DOOM.png)
+![DOOM](images_readme/DOOM1.png)
 
 Now I know what some of yall are thinking: "But DOOM doesn't use raycasting, it uses a BSP tree!". My response is that I'm lazy, and raycasting is sufficient for DOOM's current gameplay. However, I will probably switch to a more faithful implementation in v4, maybe by porting doomgeneric or making a flexible retro game engine (possible bossfight?). 
 
