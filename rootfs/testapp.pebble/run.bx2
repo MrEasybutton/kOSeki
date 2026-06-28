@@ -1,0 +1,34 @@
+OFFCOLLAB PON;
+
+RUFF win_id = PON.window("oWo notices ur", 350, 250);
+
+RUFF bg_color = PON.rgb(245, 235, 250);
+RUFF text_color = PON.rgb(68, 40, 90);
+
+PON.rect(0, 0, 345, 225, bg_color);
+
+PON.text("a button.", 20, 12, text_color, FLUFFY);
+
+RUFF i = 0;
+
+RUFFIAN CALLBACK() {
+    BAU "bautton was clicked.";
+    PON.text("thanks!", 20, 90, text_color, FUZZY);
+    i = i + 1;
+    PON.text("clicks: " + i, 180, 90, text_color, FUZZY);
+}
+
+PON.button("click me!!", 20, 40, 120, 35, CALLBACK);
+
+PON.text("type >", 20, 110, text_color, FLUFFY);
+
+RUFF inp = 0;
+
+RUFFIAN ON_CHANGE() {
+    RUFF read = PON.read(inp);
+    PON.text(read, 20, 180, text_color, FUZZY);
+}
+
+inp = PON.field(20, 135, 300, 35, 32, ON_CHANGE);
+
+BAU "started app";
