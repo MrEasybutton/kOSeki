@@ -40,7 +40,8 @@ In other words, pretty beepin massive glow-up. (am i speaking too chuuni?)
 - raytracing demo
 - biboo (what else could you want)
 
-
+> DISCLAIMER: I am not affiliated with COVER Corp concerning the development of kOSeki v3.0.
+> kOSeki is an unofficial fan project, not directly affiliated with, maintained or sponsored by COVER Corp or hololive production.
 
 ## **desktop guide**
 
@@ -382,9 +383,7 @@ After the boot process, the GUI will display and you will hear the startup sound
 
 ## **building from src**
 
-You may want to build from source to either:
-- A. Understand and modify kOSeki
-- B. Use the system completely with audio
+You may want to build from source to understand ^ modify kOSeki.
 
 This is also rather straightforward, but will require significantly more installations.
 
