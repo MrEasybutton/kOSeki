@@ -78,6 +78,8 @@ Like typical operating systems, kOSeki has a dedicated rock hard command shell f
 * `br` - play with the BloodRaven opera synth
 * `{app name}` - launch an app by typing its name
 
+> There is a limitation in kOSeki which is that it does not support mouse scrolling. This is because the PS/2 mouse originally uses 3-byte mouse packets, so no field for the scroll wheel. You can still scroll using the scrollbar thumb, which will be there in every app that has scrollable content (pbsh, casefiles, novella, CL media, Reaper). sorry!! 
+
 ### **Casefiles**
 
 kOSeki's very own file explorer, themed after Ame. Casefiles are everything to a detective; storing crucial info within their neatly arranged folders.
@@ -432,6 +434,7 @@ Thanks to Koseki Bijou of Hololive English Advent for her inspiration! ROCK ROCK
 **some key resources & stuff that helped me**:
 
 - https://wiki.osdev.org for some insightful documentation. I'm relying on this a little less now but there's a lot of theory and info that was pretty helpful for understanding basic memory management, sound, etc.
+- The basis of this version of kOSeki is adpated from [SimpleOS](https://github.com/xing1357/SimpleOS). It was foundational to starting development on v3.0 since it provided the basis of disk I/O which I sought to implement first and foremost. kOSeki's ATA and PCI subsystems derive from SimpleOS, but have been significantly modified and expanded (added file/directory creation, LFN support, multi-directory path resolution, etc).
 - Regarding the design of BAUx2, [Crafting Interpreters by Robert Nystrom](https://craftinginterpreters.com/) was a great aid. It helped this version of BAUx2 to thrive a lot better compared to the amalgamation that was the 2024-5 Rust version.
 - Regarding operatic synths, the values were taken and modified from the Peterson & Barney 1952 paper: [Control Methods Used in a Study of the Vowels](https://www.ee.columbia.edu/~dpwe/papers/PetB52-vowels.pdf), particularly the data of women's formant frequency values (A, E, I, O, U).
 - https://www.youtube.com/@dpacarana for his work on OsakaOS which really motivated development. His commentary videos are very pleasant to listen to as well.
