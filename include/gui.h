@@ -10,6 +10,7 @@
 struct Window; 
 
 typedef void (*window_content_renderer_t)(struct Window* window);
+#define MAX_DIVIDERS 4
 
 typedef struct Window {
     int id;
@@ -27,6 +28,11 @@ typedef struct Window {
     void (*on_mouse_move)(struct Window* win, int x, int y);
     void (*on_key_press)(struct Window* win, unsigned int key);
     void (*on_scroll)(struct Window* win, int scroll_delta);
+
+    BOOL split_panes_is_active;
+    int split_pos;
+    int active_pane;
+    BOOL split_dragging;
     
     uint32* frame_cache;
     BOOL frame_cache_dirty; //need rebuild?
@@ -36,6 +42,19 @@ typedef struct Window {
     uint8 avg_r;
     uint8 avg_g;
     uint8 avg_b;
+
+    BOOL split_is_active;
+    BOOL split_anim_active;
+    BOOL pixelate_is_active;
+    int pixelate_block_size;
+    uint32 split_anim_ticks;
+
+    int split_dir_x;
+    int split_dir_y;
+    int split_count;
+    int split_ofs[MAX_DIVIDERS];
+    int dragging_div_idx;
+    int split_anim_last_ofs;
 } Window;
 
 typedef enum {

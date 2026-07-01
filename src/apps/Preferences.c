@@ -37,7 +37,8 @@
 typedef enum {
     PAGE_ABOUT,
     PAGE_WALLPAPER,
-    PAGE_SYSTECH
+    PAGE_SYSTECH,
+    PAGE_SYSPREFS
 } PrefsPage;
 
 #define MAX_STACK 8
@@ -64,6 +65,12 @@ static void process_deferred_free(PrefsData* app_data) {
 }
 
 static void nav_to(int pid, PrefsPage page, BOOL push);
+
+static void on_nav_sysprefs(PON_Comp* comp, int rel_x, int rel_y) {
+    (void)rel_x; (void)rel_y; (void)comp;
+    Window* win = get_active_win();
+    if (win) nav_to(win->pid, PAGE_SYSPREFS, TRUE);
+}
 
 static void on_nav_wallpaper(PON_Comp* comp, int rel_x, int rel_y) {
     (void)rel_x; (void)rel_y; (void)comp;
@@ -292,7 +299,7 @@ static void on_scroll(Window* win, int delta) {
     is_dirty(TRUE);
 }
 
-static void manual_scroll(Window* win, unsigned int key) {
+static void key_scroll(Window* win, unsigned int key) {
     if (key == '`') on_scroll(win, -15);
     else if (key == '|') on_scroll(win, 15);
 }
@@ -357,8 +364,9 @@ static void page_about(Window* win, PrefsData* app_data) {
         const char* text;
         event_cb_t action;
     } navstuffs[] = {
+        { "SYSTEM >", on_nav_sysprefs },
         { "WALLPAPERS >", on_nav_wallpaper },
-        { "SYSTEM SPECS >", on_nav_systech }
+        { "SPECS >", on_nav_systech }
     };
 
     size_t nav_cnt = sizeof(navstuffs)/sizeof(navstuffs[0]);
@@ -377,6 +385,84 @@ static void page_about(Window* win, PrefsData* app_data) {
             y_cursor += ITEM_HEIGHT + 4 + PADDING;
         }
     }
+}
+
+extern int g_mouse_sensitivity;
+extern int g_kronii_timezone_ofs;
+static PON_Comp* g_sens_field = NULL;
+
+static int clamp_sens(int v) {
+    if (v < 50) return 50;
+    if (v > 150) return 150;
+    return v;
+}
+
+static int satoi(const char* s) {
+    int v = 0, neg = 0;
+    if (!s) return 0;
+    if (*s == '-') { neg = 1; s++; }
+    while (*s >= '0' && *s <= '9') { v = v * 10 + (*s - '0'); s++; }
+    return neg ? -v : v;
+}
+
+typedef struct {
+    const char* label;
+    int* value;
+    int min_v, max_v, step;
+} StepperRow;
+
+static void column_stepper(PON_Comp* parent, int x, int* y_cursor, int row_h, int field_w, int gap, const StepperRow* rows, int count, Stepper* bindings) {
+    int max_label_w = 0;
+    for (int i = 0; i < count; i++) {
+        int w = (int)strlen(rows[i].label) * 11;
+        if (w > max_label_w) max_label_w = w;
+    }
+
+    int stepper_x = x + max_label_w + gap + 32;
+
+    for (int i = 0; i < count; i++) {
+        PON_Comp* label = TEXT(x, *y_cursor + 4, rows[i].label, COLOR_TEXT_SECONDARY);
+        if (label) PON_child(parent, label);
+
+        STEPPER(parent, stepper_x, *y_cursor, row_h, field_w, 
+                rows[i].value, rows[i].min_v, rows[i].max_v, rows[i].step, &bindings[i]);
+
+        *y_cursor += row_h + PADDING;
+    }
+}
+
+static void page_sysprefs(Window* win, PrefsData* app_data) {
+    int y_cursor = PADDING;
+
+    PON_Comp* header = PANEL(PADDING, y_cursor, app_data->root->width - (2 * PADDING), 40, COLOR_BG_LIGHT);
+    if (header) {
+        header->draw = headerP;
+        PON_child(app_data->root, header);
+
+        PON_Comp* header_text = TEXT(15, 10, "*SYSTEM*", COLOR_TEXT_PRIMARY);
+        if (header_text) PON_child(header, header_text);
+
+        PON_Comp* back_btn = BUTTON(header->width - 40, y_cursor, 36, ITEM_HEIGHT, "<", on_nav_back);
+        if (back_btn) PON_child(header, back_btn);
+
+        y_cursor += 40 + PADDING;
+    }
+
+    int row_h = ITEM_HEIGHT;
+    int field_w = 50;
+    int btn_w = row_h;
+    int gap = 6;
+
+    int x = PADDING * 2;
+
+    //idk what else to add, so i will put a stepper group here first
+    static Stepper prefs_bindings[2];
+    static const StepperRow prefs_rows[] = {
+        { "SPEED OF BAE", &g_mouse_sensitivity, 50, 150, 25 },
+        { "TIME ZONE", &g_kronii_timezone_ofs, -12, 12, 1 },
+    };
+
+    column_stepper(app_data->root, PADDING * 2, &y_cursor, row_h, field_w, gap, prefs_rows, 2, prefs_bindings);
 }
 
 extern char* g_wallpaper_path;
@@ -530,6 +616,7 @@ static void nav_to(int pid, PrefsPage page, BOOL push) {
         case PAGE_ABOUT: page_about(win, app_data); break;
         case PAGE_WALLPAPER: page_wllp(win, app_data); break;
         case PAGE_SYSTECH: page_systech(win, app_data); break;
+        case PAGE_SYSPREFS: page_sysprefs(win, app_data); break;
     }
 
     is_dirty(TRUE);
@@ -569,8 +656,10 @@ void launch_preferences() {
     w->on_mouse_up = m_up;
     w->on_mouse_move = m_move;
     w->on_scroll = on_scroll;
-    w->on_key_press = manual_scroll;
+    w->on_key_press = key_scroll;
     w->on_close = cleanup;
 
     nav_to(p->pid, PAGE_ABOUT, TRUE);
+
+    is_dirty(TRUE);
 }

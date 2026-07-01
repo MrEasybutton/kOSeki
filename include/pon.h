@@ -83,6 +83,12 @@ typedef struct {
     uint32 text_color;
 } PON_TextField_d;
 
+typedef struct {
+    int* value;
+    int min_v, max_v, step;
+    PON_Comp* field; //refresh on inc/dec
+} Stepper;
+
 typedef enum {
     PON_MOUSE_MOVE,
     PON_MOUSE_DOWN,
@@ -101,9 +107,13 @@ void PON_free(PON_Comp* comp);
 PON_Comp* BUTTON(int x, int y, int w, int h, const char* label, event_cb_t action);
 PON_Comp* PANEL(int x, int y, int w, int h, uint32 color);
 PON_Comp* TEXT(int x, int y, const char* str, uint32 color);
+
 void update_str(PON_Comp* comp, const char* str);
-PON_Comp* DIALOG(int w, int h, const char* title);
 PON_Comp* TEXTFIELD(int x, int y, int w, int h, int max_len);
+
+//compounds
+PON_Comp* DIALOG(int w, int h, const char* title);
+PON_Comp* STEPPER(PON_Comp* parent, int x, int y, int h, int field_w, int* value, int min_v, int max_v, int step, Stepper* binding);
 
 typedef struct {
     uint32 bg;
