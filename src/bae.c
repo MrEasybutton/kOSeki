@@ -19,6 +19,8 @@
 int g_mouse_x_pos, g_mouse_y_pos;
 MOUSE_STATUS g_status;
 
+int g_mouse_sensitivity = 100;
+
 int cursor_width, cursor_height, cursor_row_padded;
 static char *cursor_bmp_data, *cursor_pixel_data;
 
@@ -119,8 +121,11 @@ void mouse_handler(REGISTERS *r) {
         int w = cursor_width + 1;
         int h = cursor_height + 1;
 
-        g_mouse_x_pos += b[1];
-        g_mouse_y_pos -= b[2];
+        int dx = ((sint8)b[1] * g_mouse_sensitivity) / 100;
+        int dy = ((sint8)b[2] * g_mouse_sensitivity) / 100;
+
+        g_mouse_x_pos += dx;
+        g_mouse_y_pos -= dy;
 
         if (g_mouse_x_pos < 0) g_mouse_x_pos = 0;
         if (g_mouse_y_pos < 0) g_mouse_y_pos = 0;
@@ -183,7 +188,7 @@ void mouse_init(void) {
     outportb(MOUSE_DATA_PORT, MOUSE_CMD_MOUSE_ID);
     mouse_read();
 
-    set_mouse_rate(200);
+    set_mouse_rate(67);
 
     mouse_wait(TRUE);
     outportb(PS2_CMD_PORT, 0x20);

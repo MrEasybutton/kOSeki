@@ -10,7 +10,8 @@ static uint8_t bcd_to_dec(uint8_t bcd) {
     return (bcd / 16 * 10) + (bcd & 0x0F);
 }
 
-// adjusted for GMT +8 (change this if u want)
+// adjusted for GMT +8 because i use it but you can adjust within kOSeki
+int g_kronii_timezone_ofs = 8;
 
 void get_time(time_t* time) {
     while (read_register(CMOS_STATUS_A) & 0x80);
@@ -39,7 +40,9 @@ void get_time(time_t* time) {
     
     uint8_t h = time->hour;
     uint8_t b = ((h&0x7F)>>4)*10 + (h&0x0F);
-    time->hour = (b + ((h&0x80) ? (b==12?0:12) : (b==12?-12:0)) + 8) % 24;
+    int raw = b + ((h&0x80) ? (b==12?0:12) : (b==12?-12:0)) + g_kronii_timezone_ofs;
+    raw = ((raw % 24) + 24) % 24; // shift into [0,24]
+    time->hour = (uint8_t)raw;
     
     if (!(status_b & 0x04)) {
         time->second = bcd_to_dec(time->second);

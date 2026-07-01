@@ -13,10 +13,17 @@
 #include "utils.h"
 #include "serial.h"
 #include "procsys.h"
+#include "keyboard.h"
 #include "apps/CLStudio.h"
 #include "apps/CLStudio.c"
 
 #define MAX_BUTTONS 20
+
+#define MAX_PANES (MAX_DIVIDERS + 1)
+#define SPLIT_MIN_THICC 40
+#define SPLIT_HIT_TOL 4
+#define SPLIT_FREQ 67
+#define SPLIT_AMP 67
 
 extern char* fat_read_file(char* fpath);
 extern char* g_wllp_data;
@@ -54,6 +61,101 @@ static void notif();
 BOOL g_screen_dirty = TRUE;
 BOOL g_bg_dirty = TRUE;
 
+static BOOL _kb_combo(BOOL* was_pressed, uint8 key1, uint8 key2) {
+    BOOL pressed = ((kb_is_key_pressed(SCAN_CODE_KEY_LEFT_SHIFT) || kb_is_key_pressed(SCAN_CODE_KEY_RIGHT_SHIFT))
+                && kb_is_key_pressed(key1) && kb_is_key_pressed(key2));
+
+    if (pressed && !*was_pressed) {
+        *was_pressed = TRUE;
+        return TRUE;
+    }
+    if (!pressed) *was_pressed = FALSE;
+    return FALSE;
+}
+
+static BOOL _kb_split(void) {
+    static BOOL was_pressed = FALSE;
+    return _kb_combo(&was_pressed, SCAN_CODE_KEY_6, SCAN_CODE_KEY_7);
+}
+
+static void _toggle_split(void) {
+    Window* win = get_active_win();
+    if (!win) return;
+
+    if (win->split_panes_is_active) {
+        win->split_panes_is_active = FALSE;
+    } else {
+        win->split_panes_is_active = TRUE;
+        if (win->split_count <= 0 && win->split_pos <= 0) {
+            int content_w = win->width - (2 * WIN_BORDER);
+            if (content_w < SPLIT_MIN_THICC * 2) content_w = SPLIT_MIN_THICC * 2;
+            win->split_pos = content_w / 2;
+        }
+    }
+
+    win->split_dragging = FALSE;
+    win->dragging_div_idx = -1;
+    win->split_anim_active = FALSE;
+    win->split_is_active = FALSE;
+    is_dirty(TRUE);
+}
+
+static BOOL _kb_pixelate(void) {
+    static BOOL was_pressed = FALSE;
+    return _kb_combo(&was_pressed, SCAN_CODE_KEY_8, SCAN_CODE_KEY_8);
+}
+
+static void _toggle_pixelate(void) {
+    Window* win = get_active_win();
+    if (!win) return;
+
+    win->pixelate_is_active = !win->pixelate_is_active;
+    if (win->pixelate_is_active && win->pixelate_block_size <= 0) {
+        win->pixelate_block_size = 4;
+    }
+    is_dirty(TRUE);
+}
+
+static void _apply_pixelate(int content_x, int content_y, int content_w, int content_h, int block_size, int screen_width, int screen_height) {
+    if (block_size < 1) block_size = 1;
+
+    for (int by = 0; by < content_h; by += block_size) {
+        for (int bx = 0; bx < content_w; bx += block_size) {
+            int bw = (bx + block_size <= content_w) ? block_size : content_w - bx;
+            int bh = (by + block_size <= content_h) ? block_size : content_h - by;
+
+            // average the block
+            uint32 r_sum = 0, g_sum = 0, b_sum = 0, n = 0;
+            for (int y = 0; y < bh; y++) {
+                int sy = content_y + by + y;
+                if (sy < 0 || sy >= screen_height) continue;
+                for (int x = 0; x < bw; x++) {
+                    int sx = content_x + bx + x;
+                    if (sx < 0 || sx >= screen_width) continue;
+                    uint32 px = g_back_buffer[sy * screen_width + sx];
+                    r_sum += (px >> 16) & 0xFF;
+                    g_sum += (px >> 8) & 0xFF;
+                    b_sum += px & 0xFF;
+                    n++;
+                }
+            }
+            if (n == 0) continue;
+            uint32 avg = RGB(r_sum / n, g_sum / n, b_sum / n);
+
+            // fill block with average col
+            for (int y = 0; y < bh; y++) {
+                int sy = content_y + by + y;
+                if (sy < 0 || sy >= screen_height) continue;
+                for (int x = 0; x < bw; x++) {
+                    int sx = content_x + bx + x;
+                    if (sx < 0 || sx >= screen_width) continue;
+                    g_back_buffer[sy * screen_width + sx] = avg;
+                }
+            }
+        }
+    }
+}
+
 void g_init() {
     g_close_icon = preload_bmp("SYSTEM/exit-ic.bmp");
 
@@ -67,6 +169,154 @@ void is_dirty(BOOL dirty) {
 void is_bg_dirty(BOOL dirty) {
     g_bg_dirty = dirty;
     if (dirty) g_screen_dirty = TRUE;
+}
+
+static int _split_gcd(int a, int b) {
+    if (a < 0) a = -a;
+    if (b < 0) b = -b;
+    while (b) { int t = b; b = a % b; a = t; }
+    return (a == 0) ? 1 : a;
+}
+
+// approx sin(deg)*1000
+static int _sinx1000(int deg) {
+    deg %= 360;
+    if (deg < 0) deg += 360;
+
+    int sign = 1;
+    if (deg > 180) { deg -= 180; sign = -1; }
+
+    long num = 4L * deg * (180 - deg);
+    long den = 40500L - (long)deg * (180 - deg);
+    if (den <= 0) den = 1;
+
+    return (int)(sign * (num * 1000) / den);
+}
+
+// 0,0 for unset
+static void _get_split_normal(Window* win, int* out_nx, int* out_ny) {
+    int ddx = win->split_dir_x;
+    int ddy = win->split_dir_y;
+    if (ddx == 0 && ddy == 0) { ddx = 0; ddy = 1; }
+
+    int g = _split_gcd(ddx, ddy);
+    ddx /= g; ddy /= g;
+
+    int nx = -ddy, ny = ddx;
+    if (nx < 0 || (nx == 0 && ny < 0)) { nx = -nx; ny = -ny; }
+
+    *out_nx = nx; *out_ny = ny;
+}
+
+// projection of line onto normal line
+static int _split_project(int nx, int ny, int x, int y) {
+    return nx * x + ny * y;
+}
+
+// get bounds of projected onto normal line
+static void _get_split_bounds(int content_w, int content_h, int nx, int ny, int* out_min, int* out_max) {
+    int corners[4] = {
+        _split_project(nx, ny, 0, 0),
+        _split_project(nx, ny, content_w, 0),
+        _split_project(nx, ny, 0, content_h),
+        _split_project(nx, ny, content_w, content_h)
+    };
+    int min_s = corners[0], max_s = corners[0];
+    for (int i = 1; i < 4; i++) {
+        if (corners[i] < min_s) min_s = corners[i];
+        if (corners[i] > max_s) max_s = corners[i];
+    }
+    *out_min = min_s; *out_max = max_s;
+}
+
+static int _get_split_ofs(Window* win, int content_w, int content_h, int nx, int ny, int* out_offsets) {
+    if (win->split_count <= 0) {
+        int split = win->split_pos;
+        if (split < SPLIT_MIN_THICC) split = SPLIT_MIN_THICC;
+        if (split > content_w - SPLIT_MIN_THICC) split = content_w - SPLIT_MIN_THICC;
+        out_offsets[0] = split;
+        return 1;
+    }
+
+    int k = win->split_count;
+    if (k > MAX_DIVIDERS) k = MAX_DIVIDERS;
+
+    for (int i = 0; i < k; i++) out_offsets[i] = win->split_ofs[i];
+
+    for (int i = 1; i < k; i++) { //sort
+        int v = out_offsets[i];
+        int j = i - 1;
+        while (j >= 0 && out_offsets[j] > v) {
+            out_offsets[j + 1] = out_offsets[j];
+            j--;
+        }
+        out_offsets[j + 1] = v;
+    }
+
+    int min_s, max_s;
+    _get_split_bounds(content_w, content_h, nx, ny, &min_s, &max_s);
+    int lo = min_s + SPLIT_MIN_THICC;
+    int hi = max_s - SPLIT_MIN_THICC;
+    if (hi < lo) hi = lo;
+
+    for (int i = 0; i < k; i++) {
+        int floor_v = (i == 0) ? lo : out_offsets[i - 1] + SPLIT_MIN_THICC;
+        if (out_offsets[i] < floor_v) out_offsets[i] = floor_v;
+    }
+    for (int i = k - 1; i >= 0; i--) {
+        int ceil_v = (i == k - 1) ? hi : out_offsets[i + 1] - SPLIT_MIN_THICC;
+        if (out_offsets[i] > ceil_v) out_offsets[i] = ceil_v;
+    }
+
+    return k;
+}
+
+static BOOL _get_pane_for_point(Window* win, int mouse_x, int mouse_y, int* pane_index, int* rel_x, int* rel_y, BOOL* on_divider) {
+    if (!win || !pane_index || !rel_x || !rel_y || !on_divider) return FALSE;
+
+    if (!win->split_panes_is_active) return FALSE;
+
+    int content_x = win->x + WIN_BORDER;
+    int content_y = win->y + TITLEBAR_H + WIN_BORDER;
+    int content_w = win->width - (2 * WIN_BORDER);
+    int content_h = win->height - TITLEBAR_H - WIN_BORDER;
+
+    if (mouse_x < content_x || mouse_x >= content_x + content_w ||
+        mouse_y < content_y || mouse_y >= content_y + content_h) {
+        return FALSE;
+    }
+
+    int nx, ny;
+    _get_split_normal(win, &nx, &ny);
+
+    int offsets[MAX_DIVIDERS];
+    int k = _get_split_ofs(win, content_w, content_h, nx, ny, offsets);
+
+    int px = mouse_x - content_x;
+    int py = mouse_y - content_y;
+    int s = _split_project(nx, ny, px, py);
+
+    *rel_x = px;
+    *rel_y = py;
+
+    // return either divider or pane idx
+    for (int i = 0; i < k; i++) {
+        int d = s - offsets[i];
+        if (d < 0) d = -d;
+        if (d <= SPLIT_HIT_TOL) {
+            *on_divider = TRUE;
+            *pane_index = i;
+            return TRUE;
+        }
+    }
+
+    *on_divider = FALSE;
+    int pane = 0;
+    for (int i = 0; i < k; i++) {
+        if (s >= offsets[i]) pane++;
+    }
+    *pane_index = pane;
+    return TRUE;
 }
 
 static BOOL _draw_winframe(Window* win) {
@@ -413,6 +663,132 @@ static BOOL is_window_occluded(Window* win, int win_index) {
     return FALSE;
 }
 
+static void _comp_split_content(Window* win, int content_x, int content_y, int content_w, int content_h,
+                                            int nx, int ny, const int* offsets, int k, const int* pane_offset, int pane_count,
+                                            int screen_width, int screen_height) {
+    if (!win || !win->content_renderer) return;
+    if (content_w <= 0 || content_h <= 0) return;
+
+    uint32* before_buf = (uint32*)kmalloc(content_w * content_h * sizeof(uint32));
+    if (!before_buf) {
+        win->content_renderer(win);
+        return;
+    }
+
+    for (int y = 0; y < content_h; y++) {
+        int sy = content_y + y;
+        if (sy < 0 || sy >= screen_height) continue;
+        int sx0 = content_x;
+        int copy_w = content_w;
+        if (sx0 < 0) { copy_w += sx0; sx0 = 0; }
+        if (sx0 + copy_w > screen_width) copy_w = screen_width - sx0;
+        if (copy_w > 0) {
+            memcpy(&before_buf[y * content_w + (sx0 - content_x)], &g_back_buffer[sy * screen_width + sx0], copy_w * sizeof(uint32));
+        }
+    }
+
+    win->content_renderer(win);
+
+    uint32* after_buf = (uint32*)kmalloc(content_w * content_h * sizeof(uint32));
+    if (!after_buf) {
+        for (int y = 0; y < content_h; y++) {
+            int sy = content_y + y;
+            if (sy < 0 || sy >= screen_height) continue;
+            int sx0 = content_x;
+            int copy_w = content_w;
+            if (sx0 < 0) { copy_w += sx0; sx0 = 0; }
+            if (sx0 + copy_w > screen_width) copy_w = screen_width - sx0;
+            if (copy_w > 0) {
+                memcpy(&g_back_buffer[sy * screen_width + sx0], &before_buf[y * content_w + (sx0 - content_x)], copy_w * sizeof(uint32));
+            }
+        }
+        kfree(before_buf);
+        return;
+    }
+
+    for (int y = 0; y < content_h; y++) {
+        int sy = content_y + y;
+        if (sy < 0 || sy >= screen_height) continue;
+        int sx0 = content_x;
+        int copy_w = content_w;
+        if (sx0 < 0) { copy_w += sx0; sx0 = 0; }
+        if (sx0 + copy_w > screen_width) copy_w = screen_width - sx0;
+        if (copy_w > 0) {
+            memcpy(&after_buf[y * content_w + (sx0 - content_x)], &g_back_buffer[sy * screen_width + sx0], copy_w * sizeof(uint32));
+        }
+    }
+
+    for (int y = 0; y < content_h; y++) {
+        int sy = content_y + y;
+        if (sy < 0 || sy >= screen_height) continue;
+
+        int crossing_px[MAX_DIVIDERS];
+        int num_crossing = 0;
+        int base_pane = 0;
+
+        for (int i = 0; i < k; i++) {
+            if (nx != 0) {
+                int numer = offsets[i] - ny * y;
+                int px_i = numer / nx;
+                if ((numer % nx != 0) && ((numer < 0) != (nx < 0))) px_i--; //floordiv
+
+                if (px_i < 0) { base_pane++; continue; }
+                if (px_i >= content_w) continue;
+                crossing_px[num_crossing++] = px_i;
+            } else {
+                if (ny * y >= offsets[i]) base_pane++;
+            }
+        }
+
+        int x_start = 0;
+        int pane = base_pane;
+        for (int seg = 0; seg <= num_crossing; seg++) {
+            int x_end = (seg < num_crossing) ? crossing_px[seg] : content_w;
+            if (x_end > x_start) {
+                int p = pane;
+                if (p >= pane_count) p = pane_count - 1;
+                int offset = pane_offset[p];
+                int src_y = y - offset;
+
+                int sx0 = x_start;
+                int w_seg = x_end - x_start;
+                int screen_x0 = content_x + sx0;
+                if (screen_x0 < 0) { w_seg += screen_x0; sx0 -= screen_x0; screen_x0 = 0; }
+                if (screen_x0 + w_seg > screen_width) w_seg = screen_width - screen_x0;
+
+                if (w_seg > 0) {
+                    const uint32* src = (src_y >= 0 && src_y < content_h)
+                        ? &after_buf[src_y * content_w + sx0]
+                        : &before_buf[y * content_w + sx0];
+                    memcpy(&g_back_buffer[sy * screen_width + screen_x0], src, w_seg * sizeof(uint32));
+                }
+            }
+            x_start = x_end;
+            pane++;
+        }
+
+        //divider thing
+        for (int i = 0; i < num_crossing; i++) {
+            int sx = content_x + crossing_px[i];
+            if (sx >= 0 && sx < screen_width) g_back_buffer[sy * screen_width + sx] = RGB(110, 90, 150);
+            if (sx + 1 >= 0 && sx + 1 < screen_width) g_back_buffer[sy * screen_width + sx + 1] = RGB(220, 180, 255);
+        }
+    }
+
+    kfree(before_buf);
+    kfree(after_buf);
+
+    //draw one full line if horiz
+    if (nx == 0 && ny != 0) {
+        for (int i = 0; i < k; i++) {
+            int y0 = offsets[i] / ny;
+            if ((offsets[i] % ny != 0) && (offsets[i] < 0)) y0--;
+            rect(content_x, content_y + y0, content_w, 1, RGB(110, 90, 150));
+            rect(content_x, content_y + y0 + 1, content_w, 1, RGB(220, 180, 255));
+        }
+    }
+}
+
 void draw_all_win() {
     valid_refs();
     
@@ -456,18 +832,63 @@ void draw_all_win() {
         BOOL render_error = FALSE;
         
         _draw_winframe(win);
+
+        int content_x = win->x + WIN_BORDER;
+        int content_y = win->y + TITLEBAR_H + WIN_BORDER;
+        int content_w = win->width - (2 * WIN_BORDER);
+        int content_h = win->height - TITLEBAR_H - WIN_BORDER;
         
-        if (win->content_renderer) {
-            //sandboxed so it wont crash the sys
-            win->content_renderer(win);
+        if (win->split_panes_is_active) {
+            int nx, ny;
+            _get_split_normal(win, &nx, &ny);
+            int offsets[MAX_DIVIDERS];
+            int k = _get_split_ofs(win, content_w, content_h, nx, ny, offsets);
+            int pane_count = k + 1;
+
+            if (!win->split_anim_active) {
+                win->split_anim_ticks = timer_ticks;
+                win->split_anim_last_ofs = 0x7fffffff; //redraw the first frame
+            }
+            win->split_anim_active = TRUE;
+            win->split_is_active = TRUE;
+
+            uint32_t elapsed = timer_ticks - win->split_anim_ticks;
+            int phase_deg = (int)((elapsed * 360) / SPLIT_FREQ) % 360;
+            int bob = (SPLIT_AMP * _sinx1000(phase_deg)) / 1000;
+
+            if (bob != win->split_anim_last_ofs) {
+                win->split_anim_last_ofs = bob;
+                is_dirty(TRUE); //endless
+            }
+
+            int pane_offset[MAX_PANES];
+            for (int p = 0; p < pane_count; p++) {
+                pane_offset[p] = (p % 2 == 0) ? bob : -bob;
+            }
+
+            _comp_split_content(win, content_x, content_y, content_w, content_h,
+                                          nx, ny, offsets, k, pane_offset, pane_count,
+                                          screen_width, screen_height);
+        } else {
+            win->split_anim_active = FALSE;
+            win->split_is_active = FALSE;
+
+            if (win->content_renderer) {
+                win->content_renderer(win);
+            }
+        }
+
+        if (win->pixelate_is_active) {
+            _apply_pixelate(content_x, content_y, content_w, content_h,
+                              win->pixelate_block_size, screen_width, screen_height);
+        }
+        
+        if (render_error && err_cnt < 5) {
+            kprint("WARNING: Error rendering content for window %d\n", win->id);
+            err_cnt++;
             
-            if (render_error && err_cnt < 5) {
-                kprint("WARNING: Error rendering content for window %d\n", win->id);
-                err_cnt++;
-                
-                if (err_cnt == 5) {
-                    kprint("(...)\n");
-                }
+            if (err_cnt == 5) {
+                kprint("(...)\n");
             }
         }
     }
@@ -489,13 +910,64 @@ void m_win_event_handler(int mouse_x, int mouse_y, BOOL mouse_down) {
         }
     }
 
-    if (g_mouse_capture_window && g_mouse_capture_window->on_mouse_move) {
-        int content_x = mouse_x - (g_mouse_capture_window->x + WIN_BORDER);
-        int content_y = mouse_y - (g_mouse_capture_window->y + TITLEBAR_H + WIN_BORDER);
-        g_mouse_capture_window->on_mouse_move(g_mouse_capture_window, content_x, content_y);
+    if (g_mouse_capture_window) {
+        if (g_mouse_capture_window->split_panes_is_active && g_mouse_capture_window->split_dragging) {
+            Window* w = g_mouse_capture_window;
+            int content_x = w->x + WIN_BORDER;
+            int content_y = w->y + TITLEBAR_H + WIN_BORDER;
+            int content_w = w->width - (2 * WIN_BORDER);
+            int content_h = w->height - TITLEBAR_H - WIN_BORDER;
+
+            int nx, ny;
+            _get_split_normal(w, &nx, &ny);
+            int s = _split_project(nx, ny, mouse_x - content_x, mouse_y - content_y);
+
+            if (w->split_count <= 0) {
+                int min_split = SPLIT_MIN_THICC;
+                int max_split = content_w - SPLIT_MIN_THICC;
+
+                if (s < min_split) s = min_split;
+                if (s > max_split) s = max_split;
+                w->split_pos = s;
+            } else {
+                int offsets[MAX_DIVIDERS];
+                int k = _get_split_ofs(w, content_w, content_h, nx, ny, offsets);
+                int idx = w->dragging_div_idx;
+
+                if (idx >= 0 && idx < k) {
+                    int min_s, max_s;
+                    _get_split_bounds(content_w, content_h, nx, ny, &min_s, &max_s);
+                    int lo = (idx == 0) ? min_s + SPLIT_MIN_THICC : offsets[idx - 1] + SPLIT_MIN_THICC;
+                    int hi = (idx == k - 1) ? max_s - SPLIT_MIN_THICC : offsets[idx + 1] - SPLIT_MIN_THICC;
+                    if (hi < lo) hi = lo;
+                    if (s < lo) s = lo;
+                    if (s > hi) s = hi;
+                    w->split_ofs[idx] = s;
+                }
+            }
+
+            is_dirty(TRUE);
+        } else if (g_mouse_capture_window->on_mouse_move) {
+            int content_x = mouse_x - (g_mouse_capture_window->x + WIN_BORDER);
+            int content_y = mouse_y - (g_mouse_capture_window->y + TITLEBAR_H + WIN_BORDER);
+            g_mouse_capture_window->on_mouse_move(g_mouse_capture_window, content_x, content_y);
+        }
     } else if (win_under_mouse && win_under_mouse->on_mouse_move) {
         int content_x = mouse_x - (win_under_mouse->x + WIN_BORDER);
         int content_y = mouse_y - (win_under_mouse->y + TITLEBAR_H + WIN_BORDER);
+
+        if (win_under_mouse->split_panes_is_active) {
+            int pane_index = -1;
+            int rel_x = 0;
+            int rel_y = 0;
+
+            BOOL on_divider = FALSE;
+            if (_get_pane_for_point(win_under_mouse, mouse_x, mouse_y, &pane_index, &rel_x, &rel_y, &on_divider)) {
+                if (pane_index >= 0) {
+                    win_under_mouse->active_pane = pane_index;
+                }
+            }
+        }
         win_under_mouse->on_mouse_move(win_under_mouse, content_x, content_y);
     }
 
@@ -528,7 +1000,23 @@ void m_win_event_handler(int mouse_x, int mouse_y, BOOL mouse_down) {
                 g_last_mouse_down_x = mouse_x;
                 g_last_mouse_down_y = mouse_y;
 
-                if (win_under_mouse->on_mouse_down) {
+                BOOL started_divider_drag = FALSE;
+                if (win_under_mouse->split_panes_is_active) {
+                    int pane_index = -1;
+                    int rel_x = 0;
+                    int rel_y = 0;
+                    BOOL on_divider = FALSE;
+                    if (_get_pane_for_point(win_under_mouse, mouse_x, mouse_y, &pane_index, &rel_x, &rel_y, &on_divider)) {
+                        if (on_divider) {
+                            win_under_mouse->split_dragging = TRUE;
+                            win_under_mouse->dragging_div_idx = pane_index; //div idx while on
+                            started_divider_drag = TRUE;
+                        } else if (pane_index >= 0) {
+                            win_under_mouse->active_pane = pane_index;
+                        }
+                    }
+                }
+                if (!started_divider_drag && win_under_mouse->on_mouse_down) {
                     int content_x = mouse_x - content_x_abs;
                     int content_y = mouse_y - content_y_abs;
                     win_under_mouse->on_mouse_down(win_under_mouse, content_x, content_y);
@@ -540,7 +1028,9 @@ void m_win_event_handler(int mouse_x, int mouse_y, BOOL mouse_down) {
     else if (!mouse_down && mouse_was_down) {
         //drag will wait for mouse up (release)
         if (g_mouse_capture_window) {
-            if (g_mouse_capture_window->on_mouse_up) {
+            if (g_mouse_capture_window->split_panes_is_active && g_mouse_capture_window->split_dragging) {
+                g_mouse_capture_window->split_dragging = FALSE;
+            } else if (g_mouse_capture_window->on_mouse_up) {
                 int content_x = mouse_x - (g_mouse_capture_window->x + WIN_BORDER);
                 int content_y = mouse_y - (g_mouse_capture_window->y + TITLEBAR_H + WIN_BORDER);
                 g_mouse_capture_window->on_mouse_up(g_mouse_capture_window, content_x, content_y);
@@ -553,6 +1043,17 @@ void m_win_event_handler(int mouse_x, int mouse_y, BOOL mouse_down) {
                     if (win_under_mouse && win_under_mouse->on_click) {
                         int content_x = mouse_x - (win_under_mouse->x + WIN_BORDER);
                         int content_y = mouse_y - (win_under_mouse->y + TITLEBAR_H + WIN_BORDER);
+                        if (win_under_mouse->split_panes_is_active) {
+                            int pane_index = -1;
+                            int rel_x = 0;
+                            int rel_y = 0;
+                            BOOL on_divider = FALSE;
+                            if (_get_pane_for_point(win_under_mouse, mouse_x, mouse_y, &pane_index, &rel_x, &rel_y, &on_divider)) {
+                                if (pane_index >= 0) {
+                                    win_under_mouse->active_pane = pane_index;
+                                }
+                            }
+                        }
                         win_under_mouse->on_click(win_under_mouse, content_x, content_y);
                     }
                 }
@@ -596,6 +1097,10 @@ void m_update() {
     extern MOUSE_STATUS g_status;
     
     m_win_event_handler(g_mouse_x_pos, g_mouse_y_pos, g_status.left_button);
+
+    if (_kb_split()) _toggle_split();
+    if (_kb_pixelate()) _toggle_pixelate();
+
     switchstate(g_mouse_x_pos, g_mouse_y_pos, g_status.left_button);
 }
 

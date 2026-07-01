@@ -423,24 +423,6 @@ static void _destroy_dialog(PON_Comp* comp) {
     }
 }
 
-PON_Comp* DIALOG(int w, int h, const char* title) {
-    PON_Comp* comp = PON_summon(COMP_DIALOG, 0, 0, w, h);
-    if (!comp) return NULL;
-
-    PON_Dialog_d* data = (PON_Dialog_d*)kmalloc(sizeof(PON_Dialog_d));
-    if (!data) {
-        kfree(comp);
-        return NULL;
-    }
-    data->title = title ? strdup(title) : NULL;
-
-    comp->data = data;
-    comp->draw = _draw_dialog;
-    comp->destroy = _destroy_dialog;
-
-    return comp;
-}
-
 static void _draw_text_input(PON_Comp* comp, int ax, int ay) {
     PON_TextField_d* data = (PON_TextField_d*)comp->data;
     if (!data) return;
@@ -523,6 +505,115 @@ PON_Comp* TEXTFIELD(int x, int y, int w, int h, int max_len) {
     comp->on_click = _text_input_click;
 
     return comp;
+}
+
+PON_Comp* DIALOG(int w, int h, const char* title) {
+    PON_Comp* comp = PON_summon(COMP_DIALOG, 0, 0, w, h);
+    if (!comp) return NULL;
+
+    PON_Dialog_d* data = (PON_Dialog_d*)kmalloc(sizeof(PON_Dialog_d));
+    if (!data) {
+        kfree(comp);
+        return NULL;
+    }
+    data->title = title ? strdup(title) : NULL;
+
+    comp->data = data;
+    comp->draw = _draw_dialog;
+    comp->destroy = _destroy_dialog;
+
+    return comp;
+}
+
+static int iclamp(int v, int lo, int hi) {
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
+}
+
+static int satoi(const char* s) {
+    int v = 0, neg = 0;
+    if (!s) return 0;
+    if (*s == '-') { neg = 1; s++; }
+    while (*s >= '0' && *s <= '9') { v = v * 10 + (*s - '0'); s++; }
+    return neg ? -v : v;
+}
+
+static void update_TF(PON_Comp* comp, const char* str) {
+    if (!comp || comp->type != COMP_TEXTFIELD || !comp->data) return;
+    PON_TextField_d* data = (PON_TextField_d*)comp->data;
+    if (!data->buffer) return;
+
+    int len = strlen(str);
+    if (len > data->max_len - 1) len = data->max_len - 1;
+
+    memcpy(data->buffer, str, len);
+    data->buffer[len] = '\0';
+}
+
+static void stepper_sync(Stepper* sp) {
+    char buf[8];
+    sprintf(buf, "%d", *sp->value);
+    update_TF(sp->field, buf);
+}
+
+static void stepper_inc(PON_Comp* comp, int rx, int ry) {
+    (void)rx; (void)ry;
+    Stepper* sp = (Stepper*)comp->appdata;
+    if (!sp) return;
+    *sp->value = iclamp(*sp->value + sp->step, sp->min_v, sp->max_v);
+    stepper_sync(sp);
+    is_dirty(TRUE);
+}
+
+static void stepper_dec(PON_Comp* comp, int rx, int ry) {
+    (void)rx; (void)ry;
+    Stepper* sp = (Stepper*)comp->appdata;
+    if (!sp) return;
+    *sp->value = iclamp(*sp->value - sp->step, sp->min_v, sp->max_v);
+    stepper_sync(sp);
+    is_dirty(TRUE);
+}
+
+static void stepper_change(PON_Comp* comp, int rx, int ry) {
+    (void)rx; (void)ry;
+    Stepper* sp = (Stepper*)comp->appdata;
+    PON_TextField_d* d = (PON_TextField_d*)comp->data;
+    if (!sp || !d || !d->buffer) return;
+    *sp->value = iclamp(satoi(d->buffer), sp->min_v, sp->max_v);
+    stepper_sync(sp);
+    is_dirty(TRUE);
+}
+
+PON_Comp* STEPPER(PON_Comp* parent, int x, int y, int h, 
+                                    int field_w, int* value, int min_v, int max_v, 
+                                    int step, Stepper* binding) {
+    binding->value = value;
+    binding->min_v = min_v;
+    binding->max_v = max_v;
+    binding->step  = step;
+
+    int btn_w = h, gap = 6;
+
+    PON_Comp* dn = BUTTON(x, y, btn_w, h, "-", stepper_dec);
+    if (dn) { dn->appdata = binding; PON_child(parent, dn); }
+    x += btn_w + gap;
+
+    PON_Comp* field = TEXTFIELD(x, y, field_w, h, 4);
+    if (field) {
+        char buf[8]; sprintf(buf, "%d", *value);
+        update_TF(field, buf);
+        field->on_change = stepper_change;
+        field->appdata = binding;
+        binding->field = field;
+        PON_child(parent, field);
+    }
+    x += field_w + gap;
+
+    PON_Comp* up = BUTTON(x, y, btn_w, h, "+", stepper_inc);
+    if (up) { up->appdata = binding; PON_child(parent, up); }
+
+    return field;
 }
 
 void PON_free(PON_Comp* comp) {
