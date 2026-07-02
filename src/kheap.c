@@ -15,6 +15,7 @@ uint64 g_total_size = 0;
 uint64 g_total_used_size = 0;
 
 KHEAP_BLOCK *g_head = (KHEAP_BLOCK*)0;
+KHEAP_BLOCK *g_tail = (KHEAP_BLOCK*)0;
 
 int k_init(void *start_addr, void *end_addr) {
     kprint("[KHEAP] build ts: %s %s\n", __DATE__, __TIME__);
@@ -32,6 +33,7 @@ int k_init(void *start_addr, void *end_addr) {
     g_total_used_size = 0;
 
     g_head = NULL;
+    g_tail = NULL;
     
     kprint("[KHEAP] Initializing heap from 0x%x to 0x%x (%d MB)\n",
                   (uint32)start_addr, (uint32)end_addr, 
@@ -137,6 +139,7 @@ void *kmalloc(int size) {
         g_head->next = NULL;
         g_head->prev = NULL;
         g_head->data = (void*)((uint8*)g_head + sizeof(KHEAP_BLOCK));
+        g_tail = g_head;
         
         sti();
         return g_head->data;
@@ -157,6 +160,7 @@ void *kmalloc(int size) {
             
             free_block->next = new_block;
             free_block->metadata.size = size;
+            if (g_tail == free_block) g_tail = new_block;
         }
         
         free_block->metadata.is_free = FALSE;
@@ -169,10 +173,7 @@ void *kmalloc(int size) {
         return NULL;
     }
 
-    KHEAP_BLOCK *temp = g_head;
-    while (temp->next != NULL) {
-        temp = temp->next;
-    }
+    KHEAP_BLOCK *temp = g_tail;
 
     KHEAP_BLOCK *new_block = (KHEAP_BLOCK *)kbrk(total_needed);
     if (!new_block) {
@@ -188,6 +189,7 @@ void *kmalloc(int size) {
     new_block->data = (void*)((uint8*)new_block + sizeof(KHEAP_BLOCK));
     
     temp->next = new_block;
+    g_tail = new_block;
     
     sti();
     return new_block->data;
@@ -259,7 +261,7 @@ void kfree(void *addr) {
             block_to_free->metadata.size += sizeof(KHEAP_BLOCK) + next->metadata.size;
             block_to_free->next = next->next;
             if (next->next) next->next->prev = block_to_free;
-
+            if (g_tail == next) g_tail = block_to_free;
         }
     }
 
@@ -273,6 +275,7 @@ void kfree(void *addr) {
             prev->next = block_to_free->next;
             if (block_to_free->next)
                 block_to_free->next->prev = prev;
+            if (g_tail == block_to_free) g_tail = prev;
         }
     }
     sti();
