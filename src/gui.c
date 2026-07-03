@@ -62,7 +62,7 @@ BOOL g_screen_dirty = TRUE;
 BOOL g_bg_dirty = TRUE;
 
 static BOOL _kb_combo(BOOL* was_pressed, uint8 key1, uint8 key2) {
-    BOOL pressed = ((kb_is_key_pressed(SCAN_CODE_KEY_LEFT_SHIFT) || kb_is_key_pressed(SCAN_CODE_KEY_RIGHT_SHIFT))
+    BOOL pressed = (kb_is_key_pressed(SCAN_CODE_KEY_ALT)
                 && kb_is_key_pressed(key1) && kb_is_key_pressed(key2));
 
     if (pressed && !*was_pressed) {

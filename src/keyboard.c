@@ -13,6 +13,7 @@
 static BOOL g_caps_lock = FALSE;
 static BOOL g_shift_pressed = FALSE;
 static BOOL g_ctrl_pressed = FALSE;
+static BOOL g_alt_pressed = FALSE;
 static BOOL g_key_states[256];
 volatile unsigned char g_ch = 0;
 volatile char g_scan_code = 0;
@@ -79,6 +80,9 @@ void keyboard_handler(REGISTERS *r) {
             case SCAN_CODE_KEY_LEFT_CTRL_RELEASE:
                 g_ctrl_pressed = FALSE;
                 break;
+            case SCAN_CODE_KEY_ALT_RELEASE:
+                g_alt_pressed = FALSE;
+                break;
             case SCAN_CODE_KEY_LEFT_SHIFT_RELEASE:
             case SCAN_CODE_KEY_RIGHT_SHIFT_RELEASE:
                 g_shift_pressed = FALSE;
@@ -117,6 +121,10 @@ void keyboard_handler(REGISTERS *r) {
 
             case SCAN_CODE_KEY_LEFT_CTRL:
                 g_ctrl_pressed = TRUE;
+                break;
+
+            case SCAN_CODE_KEY_ALT:
+                g_alt_pressed = TRUE;
                 break;
 
             case SCAN_CODE_KEY_UP:
