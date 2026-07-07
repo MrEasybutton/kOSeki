@@ -375,7 +375,10 @@ You will first see the GRUB boot menu (shown below). You can simply press Enter 
 
 The kOSeki ASCII art should briefly show as it quickly loads the filesystem and switches to the GUI. 
 
-It is normal for the display size to increase to the 1024x768 resolution as this is the regular kOSeki aspect ratio. From experience, the display may be dark for a moment (I'm not sure why this occurs, the long wait in VBox (or when using WHPX) may be due to hardware acceleration). Please wait warmly as the system prepares.
+It is normal for the display size to increase to the 1024x768 resolution as this is the regular kOSeki aspect ratio. 
+The waiting screen will show as kOSeki loads storage, tests drivers and loads system assets. Please wait warmly as the system prepares.
+
+![the splash screen](images_readme/loadsplash.png)
 
 After the boot process, the GUI will display and you will hear the startup sound. kOSeki is ready to use!
 
@@ -434,6 +437,7 @@ Thanks to Koseki Bijou of Hololive English Advent for her inspiration! ROCK ROCK
 
 - https://wiki.osdev.org for some insightful documentation. I'm relying on this a little less now but there's a lot of theory and info that was pretty helpful for understanding basic memory management, sound, etc.
 - The basis of this version of kOSeki is adpated from [SimpleOS](https://github.com/xing1357/SimpleOS). It was foundational to starting development on v3.0 since it provided the basis of disk I/O which I sought to implement first and foremost. kOSeki's ATA and PCI subsystems derive from SimpleOS, but have been significantly modified and expanded (added file/directory creation, LFN support, multi-directory path resolution, etc).
+- [STB](https://github.com/nothings/stb) for several single-file libs like stb_image for image decoding in Reaper Browser. [minimp3](https://github.com/lieff/minimp3) is used for MP3 playback by mp3.c (split from ac97.c, i will be replacing this with a single format-decode file later)
 - Regarding the design of BAUx2, [Crafting Interpreters by Robert Nystrom](https://craftinginterpreters.com/) was a great aid. It helped this version of BAUx2 to thrive a lot better compared to the amalgamation that was the 2024-5 Rust version.
 - Regarding operatic synths, the values were taken and modified from the Peterson & Barney 1952 paper: [Control Methods Used in a Study of the Vowels](https://www.ee.columbia.edu/~dpwe/papers/PetB52-vowels.pdf), particularly the data of women's formant frequency values (A, E, I, O, U).
 - https://www.youtube.com/@dpacarana for his work on OsakaOS which really motivated development. His commentary videos are very pleasant to listen to as well.

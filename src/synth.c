@@ -389,13 +389,16 @@ synth_buf_t* ac97_synth_opera_note(float f0_hz, vowel_t vowel, uint32 duration_m
 
 void ac97_synth_opera(void) {
     static const struct { float hz; vowel_t v; uint32 ms; } phrase[] = {
-        { 523.25f, VOWEL_A, 600 },
-        { 659.25f, VOWEL_O, 500 },
-        { 783.99f, VOWEL_I, 700 },
+        { 523.25f, VOWEL_A, 800 },
+        { 659.25f, VOWEL_O, 800 },
+        { 783.99f, VOWEL_I, 1200 },
+        { 880.00f, VOWEL_E, 800 },
+        { 987.77f, VOWEL_U, 800 },
+        { 1046.50f, VOWEL_A, 1200 },
     };
     ac97_mixer_batch_begin();
     uint32 current_delay = 0;
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 6; i++) {
         synth_buf_t* b = ac97_synth_opera_note(phrase[i].hz, phrase[i].v, phrase[i].ms, 75, 48000);
         if (!b) continue;
         ac97_play_synth_delayed(b, current_delay);

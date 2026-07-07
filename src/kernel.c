@@ -76,6 +76,65 @@ static int g_wallpaper_cache_width = 0;
 static int g_wallpaper_cache_height = 0;
 static BOOL g_wallpaper_cache_valid = FALSE;
 
+static void draw_bootfrm(const char* title, const char* message) {
+    rect_grad(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, RGB(186, 158, 224), RGB(240, 182, 224));
+
+    rect_grad(0, 0, SCREEN_WIDTH, 36, RGB(118, 90, 168), RGB(168, 132, 198));
+    rect_grad(0, 0, SCREEN_WIDTH, 16, RGB(255, 250, 255), RGB(196, 168, 220));
+    rect(0, 36, SCREEN_WIDTH, 1, RGB(240, 232, 250));
+
+    int box_x = (SCREEN_WIDTH - 360) / 2;
+    int box_y = (SCREEN_HEIGHT - 140) / 2;
+    int box_w = 360;
+    int box_h = 140;
+    int pad_x = 16;
+    int text_x = box_x + pad_x;
+
+    rect(box_x + 4, box_y + 6, box_w, box_h, RGB(150, 130, 176));
+
+    rect(box_x, box_y, box_w, box_h, RGB(255, 255, 255));
+    rect(box_x + 2, box_y + 2, box_w - 4, box_h - 4, RGB(214, 198, 236));
+    rect(box_x + 6, box_y + 6, box_w - 12, box_h - 12, RGB(247, 242, 255));
+
+    rect_grad(box_x + 6, box_y + 6, box_w - 12, (box_h - 12) * 2 / 5, RGB(255, 255, 255), RGB(247, 242, 255));
+
+    rect(box_x + 6, box_y + 6, box_w - 12, 2, RGB(255, 255, 255));
+
+    if (title)
+        text_ex(title, text_x, box_y + 12, RGB(74, 62, 104), FONT_DEFAULT, TRUE, 2);
+
+    if (message) {
+        char l1[96] = {0}, l2[96] = {0};
+
+        if (strlen(message) > 34) {
+            int split = 34;
+            while (split > 0 && message[split] != ' ')
+                split--;
+
+            if (split > 0) {
+                memcpy(l1, message, split);
+                l1[split] = 0;
+                strcpy(l2, message + split + 1);
+
+                text_ex(l1, text_x, box_y + 50, RGB(94, 80, 120), FONT_KALNIA, FALSE, 1);
+                text_ex(l2, text_x, box_y + 64, RGB(94, 80, 120), FONT_KALNIA, FALSE, 1);
+            } else {
+                text_ex(message, text_x, box_y + 57, RGB(94, 80, 120), FONT_KALNIA, FALSE, 1);
+            }
+        } else text_ex(message, text_x, box_y + 57, RGB(94, 80, 120), FONT_KALNIA, FALSE, 1);
+    }
+
+    text_ex("BIBOO is preparing...", text_x, box_y + 88, RGB(122, 108, 152), FONT_DEFAULT, TRUE, 1);
+    text_ex("please wait warmly", text_x, box_y + 106, RGB(122, 108, 152), FONT_DEFAULT, TRUE, 1);
+
+    swapbuf();
+}
+
+static void splash(const char* message) {
+    if (vesa_init(SCREEN_WIDTH, SCREEN_HEIGHT, 32) < 0) return;
+    draw_bootfrm("kOSeki", message ? message : "BOOTING...");
+}
+
 void set_text_mode() {
     g_video_mode = VIDEO_MODE_TEXT;
     console_init(COLOR_BRIGHT_MAGENTA, COLOR_BLACK);
@@ -639,7 +698,7 @@ void cmd(char* command_line, char* pbsh_buf, int* pbsh_len) {
     else if (strcmp(command, "novella") == 0) {
         launch_novella(NULL, 0);
     }
-    else if (strcmp(command, "cl") == 0) {
+    else if (strcmp(command, "cl_player") == 0) {
         launch_cls_df();
     }
     else if (strcmp(command, "gura") == 0) {
@@ -1031,6 +1090,9 @@ void kmain(unsigned long magic __attribute__((unused)), unsigned long addr) {
     keyboard_init();
     timer_init(67);
     sti();
+
+    splash("preparing ur storage");
+
     ata_init();
     printf("\n\n\n\n\n\n\n\n\n");
     fat_init();
@@ -1150,6 +1212,10 @@ void render_icons(void) {
         int x = start_x + i * (icon_width + spacing);
         int y = start_y;
         icon(x, y, icon_width, icon_height, icons[i].bmp, icons[i].action);
+
+        if (i == icon_count / 2) {
+            splash("loading system assets..."); //after this everything is done so I am keeping this msg generic for now
+        }
     }
 }
 
@@ -1215,6 +1281,8 @@ void sys_cleanup() {
 void init_gui() {
     g_video_mode = VIDEO_MODE_GRAPHICS;
     vesa_init(SCREEN_WIDTH, SCREEN_HEIGHT, 32);
+    
+    splash("preparing desktop...");
 
     g_init();
 
@@ -1241,4 +1309,5 @@ void init_gui() {
 
     desktop();
     render_icons();
+    swapbuf();
 }

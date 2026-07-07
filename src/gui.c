@@ -42,6 +42,63 @@ static int wincount = 0;
 static int next_window_id = 0;
 
 static preloaded_t* g_close_icon = NULL;
+static int g_icon_preload_idx = 0;
+
+static void load_icon_data(icon_button_t* btn) {
+    if (!btn || !btn->icon_path || btn->icon_pixel_data) return;
+
+    char *bmp_data = fat_read_file(btn->icon_path);
+    if (!bmp_data) return;
+
+    BMP_FILE_H *fh = (BMP_FILE_H *)bmp_data;
+    BMP_INFO_H *ih = (BMP_INFO_H *)(bmp_data + sizeof(*fh));
+
+    if (fh->type != 0x4D42 || ih->bpp != 24 || ih->width <= 0 || ih->height <= 0) {
+        kfree(bmp_data);
+        return;
+    }
+
+    int w = ih->width, h = ih->height;
+    int strd = (w * 3 + 3) & ~3;
+    int sx = ((w / 5) ? (w / 5) : 1) * 3;
+    int sy = (h / 5) ? (h / 5) : 1;
+
+    btn->icon_width = w;
+    btn->icon_height = h;
+    btn->icon_row_padded = strd;
+
+    uint32 size = strd * h;
+    btn->icon_pixel_data = (char *)kmalloc(size);
+    memcpy(btn->icon_pixel_data, bmp_data + fh->offset, size);
+
+    uint32 r_sum = 0, g_sum = 0, b_sum = 0;
+    int samples = 0;
+
+    for (int y = 0; y < h; y += sy) {
+        char *row = btn->icon_pixel_data + (h - 1 - y) * strd;
+
+        for (int x = 0; x < w * 3; x += sx) {
+            uint8 pb = row[x], pg = row[x + 1], pr = row[x + 2];
+
+            int lo = pr < pg ? pr : pg; lo = lo < pb ? lo : pb;
+            int hi = pr > pg ? pr : pg; hi = hi > pb ? hi : pb;
+            if (hi - lo < 20) continue;
+
+            r_sum += pr; g_sum += pg; b_sum += pb;
+            samples++;
+        }
+    }
+
+    btn->avg_r = 195; btn->avg_g = 180; btn->avg_b = 225;
+
+    if (samples) {
+        btn->avg_r = r_sum / samples;
+        btn->avg_g = g_sum / samples;
+        btn->avg_b = b_sum / samples;
+    }
+
+    kfree(bmp_data);
+}
 
 static Window* g_dragging_window = NULL;
 static Window* g_mouse_capture_window = NULL;
@@ -1244,12 +1301,17 @@ void redraw_all() {
     extern int g_mouse_x_pos, g_mouse_y_pos;
     static int last_gui_mouse_x = -1;
     static int last_gui_mouse_y = -1;
+    static uint32 last_tick = 0;
     extern int cursor_width, cursor_height;
 
     BOOL mouse_moved = (g_mouse_x_pos != last_gui_mouse_x || g_mouse_y_pos != last_gui_mouse_y);
+    BOOL kronii_refresh = (timer_ticks - last_tick >= 18);
     
-    if (!g_screen_dirty && !mouse_moved) {
-        return;
+    if (!g_screen_dirty && !mouse_moved && !kronii_refresh) return;
+
+    if (kronii_refresh) {
+        last_tick = timer_ticks;
+        g_screen_dirty = TRUE;
     }
 
     int old_mouse_x = g_saved_mouse_x;
@@ -1258,6 +1320,18 @@ void redraw_all() {
     int old_mouse_h = g_saved_mouse_h;
 
     _restore_mouse_bg();
+
+    if (button_count > 0 && g_icon_preload_idx < button_count) {
+        icon_button_t* btn = button_list[g_icon_preload_idx];
+        if (btn && btn->icon_path && !btn->icon_pixel_data) {
+            load_icon_data(btn);
+            if (btn->icon_pixel_data) g_screen_dirty = TRUE;
+        }
+        g_icon_preload_idx++;
+        if (g_icon_preload_idx >= button_count) {
+            g_icon_preload_idx = button_count;
+        }
+    }
 
     if (g_screen_dirty) {
         if (g_bg_dirty) {
@@ -1270,11 +1344,7 @@ void redraw_all() {
         rect(0, 36, SCREEN_WIDTH, 1, RGB(225, 215, 250));
 
         static time_t t;
-        static uint32_t last_clock_tick = 0;
-        if (timer_ticks - last_clock_tick >= 18) {
-            last_clock_tick = timer_ticks;
-            get_time(&t);
-        }
+        get_time(&t);
         draw_clock(&t, CLOCK_X, CLOCK_Y);
 
         for (int i = 0; i < button_count; i++) {
@@ -1453,69 +1523,19 @@ void icon(int x, int y, int width, int height, const char* icon_path, button_act
     if (button_count >= MAX_BUTTONS) return;
 
     icon_button_t* btn = (icon_button_t*)kmalloc(sizeof(icon_button_t));
+    memset(btn, 0, sizeof(*btn));
     btn->x = x;
     btn->y = y;
     btn->width = width;
     btn->height = height;
     btn->action = action;
     btn->state = BUTTON_STATE_NORMAL;
+    btn->avg_r = 195; btn->avg_g = 180; btn->avg_b = 225;
     
     if (icon_path) {
         btn->icon_path = (char*)kmalloc(strlen(icon_path) + 1);
         strcpy(btn->icon_path, icon_path);
-    } else {
-        btn->icon_path = NULL;
     }
-
-    char* bmp_data = fat_read_file((char*)icon_path);
-    if (bmp_data) {
-        BMP_FILE_H *fh = (BMP_FILE_H *)bmp_data;
-        BMP_INFO_H *ih = (BMP_INFO_H *)(bmp_data + sizeof(*fh));
-
-        if (fh->type == 0x4D42 && ih->bpp == 24 && ih->width > 0 && ih->height > 0) {
-            btn->icon_width = ih->width;
-            btn->icon_height = ih->height;
-            btn->icon_row_padded = (btn->icon_width * 3 + 3) & ~3;
-            uint32 alloc_size = btn->icon_row_padded * btn->icon_height;
-            btn->icon_pixel_data = (char*)kmalloc(alloc_size);
-            memcpy(btn->icon_pixel_data, bmp_data + fh->offset, alloc_size);
-
-            uint32 r_sum = 0, g_sum = 0, b_sum = 0;
-            int samples = 0;
-
-            int row_stride = (btn->icon_height > 5) ? btn->icon_height / 5 : 1;
-            int col_stride = (btn->icon_width > 5) ? (btn->icon_width / 5) * 3 : 3;
-
-            for (int row = 0; row < btn->icon_height; row += row_stride) {
-                char *row_ptr = btn->icon_pixel_data
-                            + (btn->icon_height - 1 - row) * btn->icon_row_padded;
-                for (int col = 0; col < btn->icon_width * 3; col += col_stride) {
-                    uint8 pb = (uint8)row_ptr[col];
-                    uint8 pg = (uint8)row_ptr[col + 1];
-                    uint8 pr = (uint8)row_ptr[col + 2];
-
-                    int lo = pr < pg ? pr : pg; lo = lo < pb ? lo : pb;
-                    int hi = pr > pg ? pr : pg; hi = hi > pb ? hi : pb;
-                    if (hi - lo < 20) continue;
-
-                    r_sum += pr; g_sum += pg; b_sum += pb;
-                    samples++;
-                }
-            }
-
-            if (samples > 0) {
-                btn->avg_r = (uint8)(r_sum / samples);
-                btn->avg_g = (uint8)(g_sum / samples);
-                btn->avg_b = (uint8)(b_sum / samples);
-                // kprint("avg: r=%d g=%d b=%d samples=%d\n", btn->avg_r, btn->avg_g, btn->avg_b, samples);
-            } else {
-                btn->avg_r = 195; btn->avg_g = 180; btn->avg_b = 225;
-            }
-        } else {
-            btn->icon_pixel_data = NULL;
-        }
-        kfree(bmp_data);
-    } else btn->icon_pixel_data = NULL;
 
     button_list[button_count++] = btn;
 }
@@ -1616,47 +1636,23 @@ static void notif() {
 
     int lh = 8 + LINE_SPACING;
 
-    int content_height = lc * lh +
-                         (lc - 1) * LINE_SPACING;
-
-    int notif_height = TITLEBAR_H +
-                       content_height +
-                       (PADDING * 2) + B_PAD;
+    int content_height = lc * lh + (lc - 1) * LINE_SPACING;
+    int notif_height = TITLEBAR_H + content_height +(PADDING * 2) + B_PAD;
 
     int x = screen_w - NOTIFICATION_WIDTH - 10;
     int y = screen_h - notif_height - 10;
 
-    rect(x, y, NOTIFICATION_WIDTH, notif_height,
-         RGB(230, 200, 250));
+    rect(x, y, NOTIFICATION_WIDTH, notif_height, RGB(230, 200, 250));
+    rect(x + 1, y + 1, NOTIFICATION_WIDTH - 2, notif_height - 2, RGB(140, 100, 180));
+    rect(x + 2, y + 2, NOTIFICATION_WIDTH - 4, notif_height - 4, RGB(240, 230, 255));
     
-    rect(x + 1, y + 1, NOTIFICATION_WIDTH - 2, notif_height - 2,
-         RGB(140, 100, 180));
-    
-    rect(x + 2, y + 2, NOTIFICATION_WIDTH - 4, notif_height - 4,
-         RGB(240, 230, 255));
-    
-    rect_grad(x + 2, y + 2,
-              NOTIFICATION_WIDTH - 4,
-              TITLEBAR_H,
-              RGB(140, 90, 200),
-              RGB(100, 60, 160));
-
-    text(g_notification.title,
-         x + 10,
-         y + 4,
-         RGB(255, 255, 255),
-         FONT_KALNIA,
-         FALSE);
+    rect_grad(x + 2, y + 2, NOTIFICATION_WIDTH - 4, TITLEBAR_H, RGB(140, 90, 200), RGB(100, 60, 160));
+    text(g_notification.title, x + 10, y + 4, RGB(255, 255, 255), FONT_KALNIA, FALSE);
 
     int ty = y + TITLEBAR_H + PADDING;
     
     for (int i = 0; i < lc; i++) {
-        text(lines[i],
-             x + 10,
-             ty,
-             RGB(60, 40, 80),
-             FONT_KALNIA,
-             FALSE);
+        text(lines[i], x + 10, ty, RGB(60, 40, 80), FONT_KALNIA, FALSE);
 
         ty += lh + LINE_SPACING;
         if (lc == MAX_LINES && g_notification.message[0] != '\0') {
