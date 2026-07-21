@@ -353,9 +353,11 @@ This is normal and shouldn't affect the sound. If it does, do tell me.
 
 **VirtualBox**
 
-> NOTE: I am trying to fix a very stubborn issue where sound is horrible in VirtualBox and loud. The problem is that this only occurs in VirtualBox, while kOSeki has perfectly fine sound in QEMU. 
+> NOTE: I am trying to fix a very stubborn issue where sound is crackly and distorted in VirtualBox. The problem is that this only occurs in VirtualBox, while kOSeki has perfectly fine sound in QEMU, so it's kinda difficult to debug. ofc I will also be working on an Intel HDA driver for greater compatibility on hardware (foreshadowing?).
 
-> Please consider not using sound-related apps when running in Virtualbox (you can also disable sound output and use the system without audio if you don't need to launch CL Media). As a precaution, lower the sound when you're using Virtualbox for now.
+> Please consider not using CL Studio when running in Virtualbox (you can also disable sound output and use the system without audio). As a precaution, lower the sound when you're using Virtualbox for now.
+
+> UPDATE (v3.0.1): ok idk what happened, it may have been the heap allocator tail update, but the issue seems to be heavily mitigated? On heavier processes like DOOM, the audio still stutters sometimes, but playing audio files is alright now. The BloodRaven synths in CL Studio are still crackly, so I'll try to fix this asap
 
 To create a kOSeki virtual machine, go to Virtualbox and click 'New' to open the creation dialog. 
 
