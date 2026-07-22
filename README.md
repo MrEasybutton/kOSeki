@@ -293,7 +293,7 @@ Below are some sites that work decently:
 Shork math is real. Gawrculator is a regular calculator most of the time, but will deliberately manipulate the result ~40% of the time. This dum behaviour will be indicated by a gura icon shown beside the result panel.
 
 ![Gawrculator](images_readme/gawrculator.png)
-![dum gura](images_readme/gawr_wrong.png)
+![dum gura](images_readme/gawr_wrong.png) 
 
 Gawrculator also accepts basic nested expressions, functions (log, ln) and some math constants (e.g. PI, e). You can type these with the keyboard.
 
