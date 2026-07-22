@@ -20,6 +20,7 @@ kOSeki v3.0 is my largest update thus far, and the first step in making this pro
 As my naive self from a year ago stated: 
 > *While v2 is mostly to polish the current somewhat naive implementation, v3 (tentative) will have the long-postponed backend updates such as an actual filesystem, way less lag, etc.*
 
+
 In this update, kOSeki has acquired fully revamped graphics and robust backend upgrades such as a proper heap allocator, improved rendering pipeline, and more.
 In other words, pretty beepin massive glow-up. (am i speaking too chuuni?)
 
