@@ -20,7 +20,6 @@ kOSeki v3.0 is my largest update thus far, and the first step in making this pro
 As my naive self from a year ago stated: 
 > *While v2 is mostly to polish the current somewhat naive implementation, v3 (tentative) will have the long-postponed backend updates such as an actual filesystem, way less lag, etc.*
 
-
 In this update, kOSeki has acquired fully revamped graphics and robust backend upgrades such as a proper heap allocator, improved rendering pipeline, and more.
 In other words, pretty beepin massive glow-up. (am i speaking too chuuni?)
 
@@ -425,6 +424,7 @@ To remove the OBJs (excluding external libs), you can use `make clean`. If you n
 If you're developing for kOSeki, you can also check the serial output for the logs sent during runtime. While you can check the serial log within QEMU, you may want to keep the output for analysis to spot warnings/bugs. You can use the `make debug` command which will write the running instance's serial output to  `serial.log` in the source root.
 
 If you want to reformat the disk (for example if you're adding your own files to the initial system), use `make rootfs`. If you want to subsequently produce a VDI to use in VirtualBox, use `make vdi` to convert the current disk image to a VDI.
+> (quick test ignore ts)
 
 ## **Credits**
 
