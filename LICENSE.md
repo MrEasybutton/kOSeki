@@ -1,4 +1,16 @@
-                    GNU GENERAL PUBLIC LICENSE
+DISCLAIMER:
+
+kOSeki is a fan project that utilises official assets related to Hololive production. 
+All character designs, names, and associated imagery are the intellectual property of COVER Corporation.
+
+These assets are strictly excluded from the GPL license applied to the source code of this operating system.
+
+Usage terms:
+- kOSeki is a non-commercial, hobbyist work.
+- It is not endorsed by, affiliated with, or representative of COVER Corporation.
+- Anyone copying or modifying this OS and its code must either replace these assets or adhere strictly to the official Hololive Production Derivative Works Guidelines.
+
+                      GNU GENERAL PUBLIC LICENSE
                        Version 3, 29 June 2007
 
  Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
