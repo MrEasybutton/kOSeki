@@ -24,6 +24,7 @@ In this update, kOSeki has acquired fully revamped graphics and robust backend u
 In other words, pretty beepin massive glow-up. (am i speaking too chuuni?)
 
 As of v3.0.2, kOSeki is also able to run on actual hardware! Here's some photos of it booting on my Dell Latitude D630:
+
 ![all ur devices are belong to biboo](images_readme/rockhard.png)
 ![all ur devices are belong to biboo 2](images_readme/rockhard2.png)
 

@@ -471,17 +471,15 @@ void kmain(unsigned long magic __attribute__((unused)), unsigned long addr) {
 
     if (g_using_ramdisk) {
         uint32 base = (uint32)g_ramdisk_base;
-        uint32 ofs = base % PMM_BLOCK_SIZE;
-        uint32 reserve_size = g_ramdisk_size + ofs;
-        if (reserve_size % PMM_BLOCK_SIZE)
-            reserve_size += PMM_BLOCK_SIZE - (reserve_size % PMM_BLOCK_SIZE);
-        pmm_deinit_region(base - ofs, reserve_size);
+        uint32 start = base & ~(PMM_BLOCK_SIZE - 1);
+        uint32 end = (base + g_ramdisk_size + PMM_BLOCK_SIZE - 1) & ~(PMM_BLOCK_SIZE - 1);
+
+        pmm_deinit_region(start, end - start);
+
         printf("[multiboot] 0x%x - 0x%x (%u bytes), reserved 0x%x - 0x%x from PMM\n",
-                base, base + g_ramdisk_size, g_ramdisk_size,
-                base - ofs, (base - ofs) + reserve_size);
+            base, base + g_ramdisk_size, g_ramdisk_size, start, end);
         kprint("[multiboot] 0x%x - 0x%x (%u bytes), reserved 0x%x - 0x%x from PMM\n",
-                base, base + g_ramdisk_size, g_ramdisk_size,
-                base - ofs, (base - ofs) + reserve_size);
+            base, base + g_ramdisk_size, g_ramdisk_size, start, end);
     }
 
     uint32_t free_blocks = pmm_get_max_blocks() - pmm_get_used_blocks();
