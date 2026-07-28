@@ -28,6 +28,35 @@ typedef struct {
     int thumb_x, thumb_y, thumb_width, thumb_height;
 } ScrollView;
 
+static int hex_char_val(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
+    if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+    return 0;
+}
+
+static uint32 hex6_to_rgb(const char* hex) {
+    int r = (hex_char_val(hex[0]) << 4) | hex_char_val(hex[1]);
+    int g = (hex_char_val(hex[2]) << 4) | hex_char_val(hex[3]);
+    int b = (hex_char_val(hex[4]) << 4) | hex_char_val(hex[5]);
+    return RGB(r, g, b);
+}
+
+static BOOL advance_col_tag(const char** ptr) {
+    if (strncmp(*ptr, "<C:", 3) == 0) {
+        const char* p = *ptr + 3;
+        while (*p && *p != '>') p++;
+        if (*p == '>') p++;
+        *ptr = p;
+        return TRUE;
+    }
+    if (strncmp(*ptr, "</C>", 4) == 0) {
+        *ptr += 4;
+        return TRUE;
+    }
+    return FALSE;
+}
+
 int count_terminal_lines(const char* buffer, int max_chars_per_line) {
     if (!buffer || max_chars_per_line <= 0) return 0;
     
@@ -38,6 +67,7 @@ int count_terminal_lines(const char* buffer, int max_chars_per_line) {
         int chars_in_line = 0;
         
         while (*ptr != '\0' && *ptr != '\n' && chars_in_line < max_chars_per_line) {
+            if (advance_col_tag(&ptr)) continue;
             ptr++;
             chars_in_line++;
         }
@@ -123,6 +153,7 @@ void pebbleshell(Window* win) {
         int chars_in_line = 0;
         
         while (*render_ptr != '\0' && *render_ptr != '\n' && chars_in_line < max_chars_per_line) {
+            if (advance_col_tag((const char**)&render_ptr)) continue;
             render_ptr++;
             chars_in_line++;
         }
@@ -141,33 +172,130 @@ void pebbleshell(Window* win) {
         
         int draw_x = content_x + 5;
         
+        //ignore them tags
+        const char* temp_ptr = render_ptr;
+        while (*temp_ptr) {
+            if (strncmp(temp_ptr, "</C>", 4) == 0) { temp_ptr += 4; continue; }
+            if (strncmp(temp_ptr, "<C:", 3) == 0) {
+                const char* p = temp_ptr + 3;
+                while (*p && *p != '>') p++;
+                if (*p == '>') { temp_ptr = p + 1; continue; }
+                break;
+            }
+            break;
+        }
+
         BOOL at_prompt = TRUE;
         for (int i = 0; i < prompt_len; i++) {
-            if (render_ptr[i] != TERM_PROMPT[i]) {
+            if (temp_ptr[i] != TERM_PROMPT[i]) {
                 at_prompt = FALSE;
                 break;
             }
         }
-        
+
         if (at_prompt) {
             for (int i = 0; i < prompt_len; i++) {
                 char ch[2] = {TERM_PROMPT[i], '\0'};
                 text(ch, draw_x, draw_y, RGB(235, 175, 255), FONT, TRUE);
                 draw_x += font_width;
             }
-            render_ptr += prompt_len;
+            // advance tags n prompt
+            render_ptr = (char*)(temp_ptr + prompt_len);
         }
 
         int chars_drawn = at_prompt ? prompt_len : 0;
         char line_buf[256];
         int lbuf_len = 0;
         while (*render_ptr != '\0' && *render_ptr != '\n' && chars_drawn < max_chars_per_line && lbuf_len < 255) {
+            if (strncmp(render_ptr, "<C:", 3) == 0) {
+                int tag_len = 3;
+                const char* tag_ptr = render_ptr + 3;
+                while (*tag_ptr && *tag_ptr != '>' && tag_len < 255) {
+                    tag_len++;
+                    tag_ptr++;
+                }
+                if (*tag_ptr == '>') {
+                    tag_len++;
+                }
+                if (lbuf_len + tag_len >= 255) break;
+                memcpy(&line_buf[lbuf_len], render_ptr, tag_len);
+                lbuf_len += tag_len;
+                render_ptr += tag_len;
+                continue;
+            }
+            if (strncmp(render_ptr, "</C>", 4) == 0) {
+                if (lbuf_len + 4 >= 255) break;
+                memcpy(&line_buf[lbuf_len], render_ptr, 4);
+                lbuf_len += 4;
+                render_ptr += 4;
+                continue;
+            }
             line_buf[lbuf_len++] = *render_ptr++;
             chars_drawn++;
         }
         line_buf[lbuf_len] = '\0';
         if (lbuf_len > 0) {
-            text_clip(line_buf, draw_x, draw_y, RGB(255, 255, 255), FONT);
+            uint32 default_color = RGB(255, 255, 255);
+            uint32 cur_color = default_color;
+            int idx = 0;
+            int seg_start = 0;
+
+            while (idx < lbuf_len) {
+                if (idx <= lbuf_len - 4 && strncmp(&line_buf[idx], "</C>", 4) == 0) {
+                    int seg_len = idx - seg_start;
+                    if (seg_len > 0) {
+                        char seg[256];
+                        if (seg_len > 255) seg_len = 255;
+                        memcpy(seg, &line_buf[seg_start], seg_len);
+                        seg[seg_len] = '\0';
+                        text_clip(seg, draw_x, draw_y, cur_color, FONT);
+                        draw_x += seg_len * font_width;
+                    }
+                    cur_color = default_color;
+                    idx += 4;
+                    seg_start = idx;
+                    continue;
+                }
+
+                if (idx <= lbuf_len - 4 && strncmp(&line_buf[idx], "<C:", 3) == 0) {
+                    int seg_len = idx - seg_start;
+                    if (seg_len > 0) {
+                        char seg[256];
+                        if (seg_len > 255) seg_len = 255;
+                        memcpy(seg, &line_buf[seg_start], seg_len);
+                        seg[seg_len] = '\0';
+                        text_clip(seg, draw_x, draw_y, cur_color, FONT);
+                        draw_x += seg_len * font_width;
+                    }
+
+                    int j = idx + 3;
+                    char hex[7];
+                    int h = 0;
+                    while (j < lbuf_len && h < 6 && line_buf[j] != '>') {
+                        hex[h++] = line_buf[j++];
+                    }
+                    hex[h] = '\0';
+                    if (h == 6 && j < lbuf_len && line_buf[j] == '>') {
+                        cur_color = hex6_to_rgb(hex);
+                        idx = j + 1;
+                        seg_start = idx;
+                        continue;
+                    } else { idx++; continue; }
+                }
+
+                idx++;
+            }
+
+            if (seg_start < lbuf_len) {
+                int seg_len = lbuf_len - seg_start;
+                char seg[256];
+                
+                if (seg_len > 255) seg_len = 255;
+                memcpy(seg, &line_buf[seg_start], seg_len);
+                seg[seg_len] = '\0';
+                text_clip(seg, draw_x, draw_y, cur_color, FONT);
+                draw_x += seg_len * font_width;
+            }
         }
         
         draw_y += font_height;

@@ -1,4 +1,5 @@
 #include "graphics.h"
+#include "8259_pic.h"
 #include "cmos.h"
 #include "ports.h"
 #include "string.h"
@@ -18,6 +19,7 @@
 // this will be expanded upon in v3.1, just trust me guys
 
 uint32 timer_ticks = 0;
+uint32 g_timer_hz = 0;
 
 void format_time(time_t* t, char* buf) {
     char temp[3];
@@ -93,8 +95,12 @@ void timer_handler(REGISTERS* r) {
 }
 
 void timer_init(uint32 frequency) {
+    g_timer_hz = frequency;
     uint32 divisor = 1193180 / frequency;
     outportb(0x43, 0x36);
     outportb(0x40, divisor & 0xFF);
     outportb(0x40, (divisor >> 8) & 0xFF);
+
+    register_interrupt_handler(IRQ_BASE + IRQ0_TIMER, timer_handler);
+    pic8259_unmask(IRQ0_TIMER);
 }

@@ -36,7 +36,7 @@ int save_bmp(const char* filename, Bitmap* bmp);
 void free_bmp(Bitmap* bmp);
 
 Bitmap* load_wah_image(char* filename);
-int save_wah_image(const char* filename, Bitmap* bmp);
+int save_wah(const char* filename, Bitmap* bmp);
 
 void draw_bmp(char* filename, int x, int y);
 void draw_bmp_fit(char* filename, int x, int y, int dst_w, int dst_h);

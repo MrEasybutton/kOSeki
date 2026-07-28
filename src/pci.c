@@ -13,7 +13,7 @@ uint32 pci_config_read_dword(uint8 bus, uint8 slot, uint8 func, uint8 offset) {
  
     address = (uint32)((lbus << 16) | (lslot << 11) | (lfunc << 8) | (offset & 0xfc) | ((uint32)0x80000000));
  
-    outportl(PCI_CONFIG_ADDRESS, address);
+    outportl(PCI_CONFIG_ADDR, address);
     return inportl(PCI_CONFIG_DATA);
 }
 
@@ -26,7 +26,7 @@ uint16 pci_config_read_word(uint8 bus, uint8 slot, uint8 func, uint8 offset) {
     address = (uint32)((lbus << 16) | (lslot << 11) |
               (lfunc << 8) | (offset & 0xfc) | ((uint32)0x80000000));
  
-    outportl(PCI_CONFIG_ADDRESS, address);
+    outportl(PCI_CONFIG_ADDR, address);
     return (uint16)((inportl(PCI_CONFIG_DATA) >> ((offset & 2) * 8)) & 0xffff);
 }
 
@@ -39,7 +39,7 @@ void pci_config_write_dword(uint8 bus, uint8 slot, uint8 func, uint8 offset, uin
     address = (uint32)((lbus << 16) | (lslot << 11) |
               (lfunc << 8) | (offset & 0xfc) | ((uint32)0x80000000));
  
-    outportl(PCI_CONFIG_ADDRESS, address);
+    outportl(PCI_CONFIG_ADDR, address);
     outportl(PCI_CONFIG_DATA, data);
 }
 
@@ -52,7 +52,7 @@ void pci_config_write_word(uint8 bus, uint8 slot, uint8 func, uint8 offset, uint
     address = (uint32)((lbus << 16) | (lslot << 11) |
               (lfunc << 8) | (offset & 0xfc) | ((uint32)0x80000000));
  
-    outportl(PCI_CONFIG_ADDRESS, address);
+    outportl(PCI_CONFIG_ADDR, address);
     
     // rmw
     uint32 old = inportl(PCI_CONFIG_DATA);
@@ -136,6 +136,8 @@ void pci_check_device(uint8 bus, uint8 device) {
 }
 
 void pci_init() {
+    extern void splash();
+    splash("init PCI");
     kprint("PCI: Starting enum...\n");
     for (uint16 bus = 0; bus < 256; bus++) {
         for (uint8 device = 0; device < 32; device++) {

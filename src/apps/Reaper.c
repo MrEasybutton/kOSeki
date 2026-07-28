@@ -1367,7 +1367,7 @@ void browser_renderer(Window* win) {
 
     int view_y = uby + URL_BAR_HEIGHT;
     int view_h = ch - TAB_BAR_HEIGHT - URL_BAR_HEIGHT - STATUS_BAR_HEIGHT;
-    rect(cx, view_y, cw, view_h, COLOR_PAGE_BG);
+    rect(cx, view_y, cw, view_h, t->render_list.has_page_bg ? t->render_list.page_bg_color : COLOR_PAGE_BG);
 
     if (t->is_loading && t->html_buffer_len == 0) {
         text("Loading...", cx + 10, view_y + 10, COLOR_TEXT_PRIMARY, FONT_DEFAULT, FALSE);

@@ -296,6 +296,35 @@ typedef struct {
 static const uint8 WAH1_MAGIC[4] = {'W', 'A', 'H', '1'};
 static const uint8 WAH2_MAGIC[4] = {'W', 'A', 'H', '2'};
 
+// wah3 now with conditional alpha-channel, CRC32 integrity check, row-block-chunks
+//               ^ save-time detection      ^ corrupts pass null   ^ reduce scratch mem for decoder
+#define WAH3_BLOCK_ROWS 32u
+#define WAH3_FLAG_ALPHA 0x01u
+
+typedef struct {
+    uint8 magic[4];
+    uint8 version;
+    uint8 flags; //bit0 to enable alpha
+    uint16 rows;
+    uint32 width;
+    uint32 height;
+    uint32 block_count;
+    uint32 crc32;
+} __attribute__((packed)) WAH3_HEADER;
+
+static const uint8 WAH3_MAGIC[4] = {'W', 'A', 'H', '3'};
+
+#define CRC32_INIT 0xFFFFFFFFu
+#define CRC32_FINAL(c) (~(c))
+
+static uint32 crc32_update(uint32 crc, const uint8* data, uint32 len) {
+    for (uint32 i = 0; i < len; i++) {
+        crc ^= data[i];
+        for (int b = 0; b < 8; b++) { crc = (crc >> 1) ^ ((crc & 1) ? 0xEDB88320u : 0u); }
+    }
+    return crc;
+}
+
 typedef struct {
     const uint8* header;
     uint32 header_size;
@@ -347,59 +376,121 @@ static Bitmap* decode_wah1(const char* raw_data, uint32 file_size) {
     return bmp;
 }
 
-static void delta_encode(uint8* buf, uint32 size) {
-    for (uint32 i = size - 1; i >= 3; i--)
-        buf[i] -= buf[i - 3];
+static void delta_encode(uint8* buf, uint32 size, uint32 stride) {
+    for (uint32 i = size - 1; i >= stride; i--) buf[i] -= buf[i - stride];
 }
 
-static void delta_decode(uint8* buf, uint32 size) {
-    for (uint32 i = 3; i < size; i++)
-        buf[i] += buf[i - 3];
+static void delta_decode(uint8* buf, uint32 size, uint32 stride) {
+    for (uint32 i = stride; i < size; i++) buf[i] += buf[i - stride];
 }
 
-int save_wah_image(const char* filename, Bitmap* bmp) {
+int save_wah(const char* filename, Bitmap* bmp) {
     if (!bmp || !bmp->data) return -1;
 
     uint32 pixel_count = bmp->width * bmp->height;
-    uint32 rgb_size = pixel_count * 3;
 
-    //raw buf
-    uint8* rgb_data = (uint8*)kmalloc(rgb_size);
-    if (!rgb_data) return -1;
-
+    bool has_alpha = false;
     for (uint32 i = 0; i < pixel_count; i++) {
-        uint32 color = bmp->data[i];
-        rgb_data[i*3 + 0] = (color >> 0) & 0xFF;
-        rgb_data[i*3 + 1] = (color >> 8) & 0xFF;
-        rgb_data[i*3 + 2] = (color >> 16) & 0xFF;
+        if (bmp->data[i] & 0xFF000000u) { has_alpha = true; break; }
+    }
+    uint8 bpp = has_alpha ? 4 : 3;
+
+    uint32 rows = WAH3_BLOCK_ROWS;
+    uint32 block_count = (bmp->height + rows - 1) / rows;
+    uint32 row_bytes = bmp->width * bpp;
+    uint32 max_block_bytes = rows * row_bytes;
+
+    uint32* block_size = (uint32*)kmalloc(block_count * sizeof(uint32));
+    uint8* raw_block = (uint8*)kmalloc(max_block_bytes);
+    if (!block_size || !raw_block) {
+        kfree(block_size); kfree(raw_block);
+        return -1;
     }
 
-    delta_encode(rgb_data, rgb_size);
+    // worst-case will be sum of bounds per-block
+    uint32 total_cap = 0;
+    for (uint32 b = 0; b < block_count; b++) {
+        uint32 rows_this_block = rows;
+        if ((b + 1) * rows > bmp->height)
+            rows_this_block = bmp->height - b * rows;
+        total_cap += (uint32)lzav_compress_bound(rows_this_block * row_bytes);
+    }
 
-    int cap = lzav_compress_bound(rgb_size);
-    uint8* comp_buf = (uint8*)kmalloc(cap);
-    if (!comp_buf) { kfree(rgb_data); return -1; }
+    uint8* comp_all = (uint8*)kmalloc(total_cap);
+    if (!comp_all) {
+        kfree(block_size); kfree(raw_block);
+        return -1;
+    }
 
-    int comp_size = lzav_compress_default(rgb_data, comp_buf, rgb_size, cap);
-    kfree(rgb_data);
+    uint32 offset = 0;
+    for (uint32 b = 0; b < block_count; b++) {
+        uint32 row0 = b * rows;
+        uint32 rows_this_block = rows;
+        if (row0 + rows_this_block > bmp->height)
+            rows_this_block = bmp->height - row0;
+        uint32 block_bytes = rows_this_block * row_bytes;
 
-    if (comp_size <= 0) { kfree(comp_buf); return -1; }
+        for (uint32 r = 0; r < rows_this_block; r++) {
+            uint32 pix_row = row0 + r;
+            for (uint32 x = 0; x < bmp->width; x++) {
+                uint32 color = bmp->data[pix_row * bmp->width + x];
+                uint8* dst = raw_block + r * row_bytes + x * bpp;
+                dst[0] = (color >> 0) & 0xFF;
+                dst[1] = (color >> 8) & 0xFF;
+                dst[2] = (color >> 16) & 0xFF;
+                if (has_alpha) dst[3] = (color >> 24) & 0xFF;
+            }
+        }
 
-    WAH2_HEADER hdr;
-    memcpy(hdr.magic, WAH2_MAGIC, 4);
+        delta_encode(raw_block, block_bytes, bpp);
+
+        int cap = (int)(total_cap - offset);
+        int csize = lzav_compress_default(raw_block, comp_all + offset, block_bytes, cap);
+        if (csize <= 0) {
+            kfree(block_size); kfree(raw_block); kfree(comp_all);
+            return -1;
+        }
+        block_size[b] = (uint32)csize;
+        offset += (uint32)csize;
+    }
+
+    kfree(raw_block);
+    uint32 total_compressed = offset;
+
+    WAH3_HEADER hdr;
+    memcpy(hdr.magic, WAH3_MAGIC, 4);
+    hdr.version = 1;
+    hdr.flags = has_alpha ? WAH3_FLAG_ALPHA : 0;
+    hdr.rows = (uint16)rows;
     hdr.width = bmp->width;
     hdr.height = bmp->height;
-    hdr.compressed_size = (uint32)comp_size;
+    hdr.block_count = block_count;
+
+    uint32 table_bytes = block_count * sizeof(uint32);
+    uint32 crc = CRC32_INIT;
+    crc = crc32_update(crc, (uint8*)block_size, table_bytes);
+    crc = crc32_update(crc, comp_all, total_compressed);
+    hdr.crc32 = CRC32_FINAL(crc);
+
+    uint32 header_blob_size = sizeof(WAH3_HEADER) + table_bytes;
+    uint8* header_blob = (uint8*)kmalloc(header_blob_size);
+    if (!header_blob) {
+        kfree(block_size); kfree(comp_all);
+        return -1;
+    }
+    memcpy(header_blob, &hdr, sizeof(WAH3_HEADER));
+    memcpy(header_blob + sizeof(WAH3_HEADER), block_size, table_bytes);
+    kfree(block_size);
 
     FlatWriteCtx w = {
-        .header = (const uint8*)&hdr,
-        .header_size = sizeof(hdr),
-        .data = comp_buf,
-        .data_size = (uint32)comp_size
+        .header = header_blob,
+        .header_size = header_blob_size,
+        .data = comp_all,
+        .data_size = total_compressed
     };
-    int result = fat_write_file_call(filename, sizeof(hdr) + comp_size,
-                                   &w, flat_fill_chunk);
-    kfree(comp_buf);
+    int result = fat_write_file_call(filename, header_blob_size + total_compressed, &w, flat_fill_chunk);
+    kfree(header_blob);
+    kfree(comp_all);
     return result;
 }
 
@@ -423,25 +514,96 @@ static Bitmap* decode_wah2(const char* raw_data, uint32 file_size) {
     if (!rgb_data) return NULL;
 
     const uint8* comp_data = (const uint8*)raw_data + sizeof(WAH2_HEADER);
-    int result = lzav_decompress(comp_data, rgb_data,
-                                 hdr->compressed_size, rgb_size);
+    int result = lzav_decompress(comp_data, rgb_data, hdr->compressed_size, rgb_size);
     if (result != (int)rgb_size) {
         kfree(rgb_data);
         return NULL;
     }
 
-    delta_decode(rgb_data, rgb_size);
+    delta_decode(rgb_data, rgb_size, 3);
 
     Bitmap* bmp = bmp_alloc(hdr->width, hdr->height);
     if (!bmp) { kfree(rgb_data); return NULL; }
 
     uint32 pixel_count = hdr->width * hdr->height;
-    for (uint32 i = 0; i < pixel_count; i++)
-        bmp->data[i] = RGB(rgb_data[i*3 + 2],
-                                rgb_data[i*3 + 1],
-                                rgb_data[i*3 + 0]);
+    for (uint32 i = 0; i < pixel_count; i++) {
+        bmp->data[i] = RGB(rgb_data[i*3 + 2], rgb_data[i*3 + 1], rgb_data[i*3 + 0]);
+    }
 
     kfree(rgb_data);
+    return bmp;
+}
+
+static Bitmap* decode_wah3(const char* raw_data, uint32 file_size) {
+    if (file_size < sizeof(WAH3_HEADER)) return NULL;
+    const WAH3_HEADER* hdr = (const WAH3_HEADER*)raw_data;
+
+    if (hdr->width == 0 || hdr->height == 0 || hdr->width > 2048 || hdr->height > 2048 || (uint64)hdr->width * hdr->height > 262144) {
+        return NULL;
+    }
+
+    if (hdr->rows == 0 || hdr->block_count == 0) return NULL;
+
+    uint32 expected_blocks = (hdr->height + hdr->rows - 1) / hdr->rows;
+    if (hdr->block_count != expected_blocks) return NULL;
+
+    uint8 bpp = (hdr->flags & WAH3_FLAG_ALPHA) ? 4 : 3;
+
+    uint32 table_bytes = hdr->block_count * sizeof(uint32);
+    uint32 header_and_table = sizeof(WAH3_HEADER) + table_bytes;
+    if (file_size < header_and_table) return NULL;
+
+    const uint32* block_size = (const uint32*)(raw_data + sizeof(WAH3_HEADER));
+    const uint8* payload = (const uint8*)raw_data + header_and_table;
+    uint32 payload_size = file_size - header_and_table;
+
+    // table sum must be equal to the remaining bytes
+    uint64 total_compressed = 0;
+    for (uint32 b = 0; b < hdr->block_count; b++) total_compressed += block_size[b];
+    if (total_compressed != payload_size) return NULL;
+
+    uint32 crc = CRC32_INIT;
+    crc = crc32_update(crc, (const uint8*)block_size, table_bytes);
+    crc = crc32_update(crc, payload, payload_size);
+    if (CRC32_FINAL(crc) != hdr->crc32) return NULL;
+
+    Bitmap* bmp = bmp_alloc(hdr->width, hdr->height);
+    if (!bmp) return NULL;
+
+    uint32 row_bytes = hdr->width * bpp;
+    uint32 first_block_rows = (hdr->rows < hdr->height) ? hdr->rows : hdr->height;
+    uint32 max_block_bytes = first_block_rows * row_bytes;
+    uint8* raw_block = (uint8*)kmalloc(max_block_bytes);
+    if (!raw_block) { free_bmp(bmp); return NULL; }
+
+    uint32 offset = 0;
+    for (uint32 b = 0; b < hdr->block_count; b++) {
+        uint32 row0 = b * hdr->rows;
+        uint32 rows_this_block = hdr->rows;
+        if (row0 + rows_this_block > hdr->height)
+            rows_this_block = hdr->height - row0;
+        uint32 block_bytes = rows_this_block * row_bytes;
+
+        int result = lzav_decompress(payload + offset, raw_block, block_size[b], block_bytes);
+        if (result != (int)block_bytes) {
+            kfree(raw_block); free_bmp(bmp); return NULL;
+        }
+        offset += block_size[b];
+
+        delta_decode(raw_block, block_bytes, bpp);
+
+        for (uint32 r = 0; r < rows_this_block; r++) {
+            uint32 pix_row = row0 + r;
+            for (uint32 x = 0; x < hdr->width; x++) {
+                uint8* src = raw_block + r * row_bytes + x * bpp;
+                uint32 color = RGB(src[2], src[1], src[0]);
+                if (bpp == 4) color |= ((uint32)src[3] << 24);
+                bmp->data[pix_row * hdr->width + x] = color;
+            }
+        }
+    }
+
+    kfree(raw_block);
     return bmp;
 }
 
@@ -459,7 +621,9 @@ Bitmap* load_wah_image(char* filename) {
     if (!raw_data) return NULL;
 
     Bitmap* bmp;
-    if (memcmp(raw_data, WAH2_MAGIC, 4) == 0)
+    if (memcmp(raw_data, WAH3_MAGIC, 4) == 0)
+        bmp = decode_wah3(raw_data, file_size);
+    else if (memcmp(raw_data, WAH2_MAGIC, 4) == 0) // im keeping these here for legacy
         bmp = decode_wah2(raw_data, file_size);
     else if (memcmp(raw_data, WAH1_MAGIC, 4) == 0)
         bmp = decode_wah1(raw_data, file_size);

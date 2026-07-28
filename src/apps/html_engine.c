@@ -13,8 +13,28 @@ typedef struct {
     int current_form_id;
 } ParserState;
 
-static uint32 parse_hex_color(const char* hex)
-{
+#define MAX_CSS_RULES 32
+#define MAX_STYLE_STACK 64
+
+// basic CSS (bg and text colour), style blox
+typedef struct {
+    char selector[64];
+    BOOL has_color;
+    uint32 color;
+    BOOL has_bg;
+    uint32 bg_color;
+} CssRule;
+
+typedef struct {
+    uint32 color;
+} FrameStyle;
+
+static CssRule css_rules[MAX_CSS_RULES];
+static int rule_cnt;
+static FrameStyle style_stack[MAX_STYLE_STACK];
+static int style_stack_d;
+
+static uint32 parse_hex_color(const char* hex) {
     if (hex[0] == '#') hex++;
     uint32 c = 0;
     for (int i = 0; i < 6; i++) {
@@ -26,12 +46,96 @@ static uint32 parse_hex_color(const char* hex)
     return RGB((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF);
 }
 
-static void parse_style(const char* style, ParserState* state)
+static char* find_color_prop(const char* s) {
+    const char* p = s;
+    while ((p = strstr(p, "color:")) != NULL) {
+        long off = p - s;
+        if (off >= 11 && strncmp(p - 11, "background-", 11) == 0) { p += 6; continue; }
+        return (char*)p;
+    }
+    return NULL;
+}
+
+static void parse_color_decls(const char* decls, BOOL* has_color, uint32* color, BOOL* has_bg, uint32* bg_color) {
+    char* p = find_color_prop(decls);
+    if (p) {
+        p += 6;
+        while (*p != '#' && !isalpha(*p) && *p != '\0') p++;
+        if (*p == '#') { *color = parse_hex_color(p); if (has_color) *has_color = TRUE; }
+    }
+
+    char* bg = strstr(decls, "background-color:");
+    int bg_len = 18;
+    if (!bg) { bg = strstr(decls, "background:"); bg_len = 11; }
+    if (bg) {
+        char* q = bg + bg_len;
+        while (*q != '#' && !isalpha(*q) && *q != '\0' && *q != ';') q++;
+        if (*q == '#') { *bg_color = parse_hex_color(q); if (has_bg) *has_bg = TRUE; }
+    }
+}
+
+static void parse_style(const char* style, ParserState* state) {
+    BOOL has_color = FALSE;
+    parse_color_decls(style, &has_color, &state->color, NULL, NULL);
+}
+
+static char* extract_attr(const char* tag, const char* attr)
 {
-    char* p = strstr(style, "color:");
-    if (!p) return;
-    while (*p != '#' && !isalpha(*p) && *p != '\0') p++;
-    if (*p == '#') state->color = parse_hex_color(p);
+    char* p = strstr(tag, attr);
+    if (!p) return NULL;
+    p += strlen(attr);
+    while (*p == ' ' || *p == '=') p++;
+    char quote = 0;
+    if (*p == '"' || *p == '\'') quote = *p++;
+    const char* start = p;
+    while (*p && (quote ? (*p != quote) : (*p != ' ' && *p != '>'))) p++;
+    int len = p - start;
+    char* res = (char*)kmalloc(len + 1);
+    memcpy(res, start, len);
+    res[len] = '\0';
+    return res;
+}
+
+static void bg_resolve(const char* tname, const char* tp, BOOL* has_bg, uint32* bg_color) {
+    *has_bg = FALSE;
+    char* cls = extract_attr(tp, "class");
+    char* idv = extract_attr(tp, "id");
+
+    for (int i = 0; i < rule_cnt; i++) {
+        CssRule* r = &css_rules[i];
+        BOOL match = FALSE;
+        if (r->selector[0] == '.') {
+            if (cls) {
+                int sel_len = strlen(r->selector + 1);
+                const char* c = cls;
+                while (*c) {
+                    while (*c == ' ') c++;
+                    const char* w = c;
+                    while (*c && *c != ' ') c++;
+                    int wlen = (int)(c - w);
+                    if (wlen == sel_len && strncmp(w, r->selector + 1, wlen) == 0) { match = TRUE; break; }
+                }
+            }
+        } else if (r->selector[0] == '#') {
+            if (idv && strcmp(idv, r->selector + 1) == 0) match = TRUE;
+        } else {
+            if (strcmp(tname, r->selector) == 0) match = TRUE;
+        }
+        if (match && r->has_bg) { *has_bg = TRUE; *bg_color = r->bg_color; }
+    }
+
+    if (cls) kfree(cls);
+    if (idv) kfree(idv);
+
+    char* inline_style = extract_attr(tp, "style");
+    if (inline_style) {
+        BOOL inline_has_bg = FALSE;
+        uint32 dummy_color;
+        BOOL dummy_has_color = FALSE;
+        parse_color_decls(inline_style, &dummy_has_color, &dummy_color, &inline_has_bg, bg_color);
+        if (inline_has_bg) *has_bg = TRUE;
+        kfree(inline_style);
+    }
 }
 
 static int decode_entity(const char* p, char* out, int* src_advance)
@@ -96,33 +200,113 @@ static int decode_entity(const char* p, char* out, int* src_advance)
     return 1;
 }
 
-static char* extract_attribute(const char* tag, const char* attr)
-{
-    char* p = strstr(tag, attr);
-    if (!p) return NULL;
-    p += strlen(attr);
-    while (*p == ' ' || *p == '=') p++;
-    char quote = 0;
-    if (*p == '"' || *p == '\'') quote = *p++;
-    const char* start = p;
-    while (*p && (quote ? (*p != quote) : (*p != ' ' && *p != '>'))) p++;
-    int len = p - start;
-    char* res = (char*)kmalloc(len + 1);
-    memcpy(res, start, len);
-    res[len] = '\0';
-    return res;
-}
-
 static void extract_attr_buf(const char* tag, const char* attr,
                               char* out, int out_len)
 {
-    char* val = extract_attribute(tag, attr);
+    char* val = extract_attr(tag, attr);
     if (val) { strncpy(out, val, out_len - 1); out[out_len - 1] = '\0'; kfree(val); }
     else out[0] = '\0';
 }
 
-static void percent_encode(const char* src, char* dst, int dst_len)
-{
+//dont push the unmatched
+static BOOL is_void_element(const char* tname) {
+    if (tname[0] == '!') return TRUE;
+    static const char* voids[] = {
+        "br", "img", "input", "hr", "meta", "link", "area", "base",
+        "col", "embed", "source", "track", "wbr", "param",
+        "script", "style", "select", "noscript", "iframe",
+        "svg", "math", "canvas", "video", "audio", "object",
+        "template", "textarea", "title", "button", NULL
+    };
+    for (int i = 0; voids[i]; i++) if (strcmp(tname, voids[i]) == 0) return TRUE;
+    return FALSE;
+}
+
+static void parse_stylesheet(const char* css, int len) {
+    const char* p = css;
+    const char* end = css + len;
+
+    while (p < end && rule_cnt < MAX_CSS_RULES) {
+        while (p < end && (*p == ' ' || *p == '\n' || *p == '\r' || *p == '\t')) p++;
+        if (p >= end) break;
+
+        const char* sel_start = p;
+        while (p < end && *p != '{') p++; //skip
+        if (p >= end) break;
+        int sel_len = (int)(p - sel_start);
+        while (sel_len > 0 && (sel_start[sel_len - 1] == ' ' || sel_start[sel_len - 1] == '\t' ||
+                                sel_start[sel_len - 1] == '\n' || sel_start[sel_len - 1] == '\r'))
+            sel_len--;
+        p++;
+
+        const char* decl_start = p;
+        while (p < end && *p != '}') p++; //skip
+        int decl_len = (int)(p - decl_start);
+        if (p < end) p++;
+
+        char decls[256];
+        int dl = decl_len < 255 ? decl_len : 255;
+        memcpy(decls, decl_start, dl);
+        decls[dl] = '\0';
+
+        const char* s = sel_start;
+        const char* s_end = sel_start + sel_len;
+        while (s < s_end && rule_cnt < MAX_CSS_RULES) {
+            while (s < s_end && (*s == ' ' || *s == '\t')) s++;
+            const char* piece = s;
+            while (s < s_end && *s != ',') s++;
+            int piece_len = (int)(s - piece);
+            while (piece_len > 0 && piece[piece_len - 1] == ' ') piece_len--;
+
+            if (piece_len > 0 && piece_len < (int)sizeof(css_rules[0].selector)) {
+                CssRule* r = &css_rules[rule_cnt];
+                memcpy(r->selector, piece, piece_len);
+                r->selector[piece_len] = '\0';
+                for (char* c = r->selector; *c; c++) if (*c >= 'A' && *c <= 'Z') *c += 32;
+                r->has_color = FALSE;
+                r->has_bg = FALSE;
+                parse_color_decls(decls, &r->has_color, &r->color, &r->has_bg, &r->bg_color);
+                rule_cnt++;
+            }
+            if (s < s_end) s++;
+        }
+    }
+}
+
+static void apply_css(const char* tname, const char* tp, ParserState* state) {
+    if (rule_cnt == 0) return;
+
+    char* cls = extract_attr(tp, "class");
+    char* idv = extract_attr(tp, "id");
+
+    for (int i = 0; i < rule_cnt; i++) {
+        CssRule* r = &css_rules[i];
+        BOOL match = FALSE;
+
+        if (r->selector[0] == '.') {
+            if (cls) {
+                int sel_len = strlen(r->selector + 1);
+                const char* c = cls;
+                while (*c) {
+                    while (*c == ' ') c++;
+                    const char* w = c;
+                    while (*c && *c != ' ') c++;
+                    int wlen = (int)(c - w);
+                    if (wlen == sel_len && strncmp(w, r->selector + 1, wlen) == 0) { match = TRUE; break; }
+                }
+            }
+        } else if (r->selector[0] == '#') {
+            if (idv && strcmp(idv, r->selector + 1) == 0) match = TRUE;
+        } else if (strcmp(tname, r->selector) == 0) match = TRUE;
+
+        if (match && r->has_color) state->color = r->color;
+    }
+
+    if (cls) kfree(cls);
+    if (idv) kfree(idv);
+}
+
+static void percent_encode(const char* src, char* dst, int dst_len) {
     static const char hex[] = "0123456789ABCDEF";
     int di = 0;
     for (; *src && di < dst_len - 3; src++) {
@@ -136,9 +320,7 @@ static void percent_encode(const char* src, char* dst, int dst_len)
     dst[di] = '\0';
 }
 
-int html_form_encode(const RenderList* list, int form_id,
-                     char* out_buf, int out_len)
-{
+int html_form_encode(const RenderList* list, int form_id, char* out_buf, int out_len) {
     int written = 0;
     BOOL first = TRUE;
     for (int i = 0; i < list->count && written < out_len - 1; i++) {
@@ -164,8 +346,7 @@ int html_form_encode(const RenderList* list, int form_id,
     return written;
 }
 
-static void emit_newline(RenderList* list)
-{
+static void emit_newline(RenderList* list) {
     if (list->count >= MAX_RENDER_ELEMENTS) return;
     RenderElement* el = &list->elements[list->count++];
     memset(el, 0, sizeof(*el));
@@ -174,8 +355,7 @@ static void emit_newline(RenderList* list)
     el->scale = 1;
 }
 
-static void decode_entities(char* s)
-{
+static void decode_entities(char* s) {
     if (!s) return;
     char* src = s;
     char* dst = s;
@@ -205,11 +385,15 @@ static void tag_tolower(const char* tag, char* out, int out_len) {
     out[i] = '\0';
 }
 
-void html_parse(const char* html, RenderList* list)
-{
+void html_parse(const char* html, RenderList* list) {
     list->count = 0;
     list->form_count = 0;
     list->focused_element = -1;
+    list->has_page_bg = FALSE;
+    list->page_bg_color = 0;
+
+    rule_cnt = 0;
+    style_stack_d = 0;
 
     ParserState state = {
         .color = RGB(20, 20, 20),
@@ -292,9 +476,61 @@ void html_parse(const char* html, RenderList* list)
                 continue;
             }
 
+            BOOL is_void = is_void_element(tname);
+            if (!is_void) {
+                if (!is_close) {
+                    if (style_stack_d < MAX_STYLE_STACK) {
+                        style_stack[style_stack_d].color = state.color;
+                        style_stack_d++;
+                    }
+                    apply_css(tname, tp, &state);
+                    char* inline_style = extract_attr(tp, "style");
+                    if (inline_style) { parse_style(inline_style, &state); kfree(inline_style); }
+                    if (strcmp(tname, "body") == 0) {
+                        bg_resolve(tname, tp, &list->has_page_bg, &list->page_bg_color);
+                    }
+                } else if (style_stack_d > 0) {
+                    style_stack_d--;
+                    state.color = style_stack[style_stack_d].color;
+                }
+            }
+
+            if (!is_close && strcmp(tname, "style") == 0) {
+                const char* content_start = p;
+                while (*p) {
+                    if (*p == '<') {
+                        const char* q = p;
+                        static const char* closetag = "</style";
+                        int match = 1;
+                        for (int ci = 0; closetag[ci]; ci++) {
+                            if (*q == '\0') { match = 0; break; }
+                            char c1 = closetag[ci], c2 = *q;
+                            if (c2 >= 'A' && c2 <= 'Z') c2 += 32;
+                            if (c1 != c2) { match = 0; break; }
+                            q++;
+                        }
+                        if (match) break;
+                    }
+                    p++;
+                }
+                parse_stylesheet(content_start, (int)(p - content_start));
+                while (*p && *p != '>') p++;
+                if (*p == '>') p++;
+                last_was_space = TRUE;
+                continue;
+            }
+
+            // not rendered but need to suppress so we can still find the style
+            if (!is_close && strcmp(tname, "head") == 0) {
+                state.in_ignored_tag = TRUE;
+                continue;
+            }
+            if (is_close && strcmp(tname, "head") == 0) {
+                state.in_ignored_tag = FALSE;
+                continue;
+            }
+
             if (!is_close && (strcmp(tname, "script") == 0 ||
-                            strcmp(tname, "style") == 0 ||
-                            strcmp(tname, "head") == 0 ||
                             strcmp(tname, "select") == 0 ||
                             strcmp(tname, "noscript") == 0 ||
                             strcmp(tname, "iframe") == 0 ||
@@ -442,13 +678,9 @@ void html_parse(const char* html, RenderList* list)
                                     strcmp(tname, "kbd") == 0 ||
                                     strcmp(tname, "samp") == 0 ||
                                     strcmp(tname, "tt") == 0)) { //stubs
-            } else if (!is_close && strcmp(tname, "span") == 0) {
-                parse_style(tp, &state);
-            } else if ( is_close && strcmp(tname, "span") == 0) {
-                state.color = RGB(20, 20, 20);
             } else if (!is_close && strcmp(tname, "a") == 0) {
                 if (state.link_url) kfree(state.link_url);
-                state.link_url = extract_attribute(tp, "href");
+                state.link_url = extract_attr(tp, "href");
                 decode_entities(state.link_url);
             } else if ( is_close && strcmp(tname, "a") == 0) {
                 if (state.link_url) kfree(state.link_url);
@@ -494,6 +726,25 @@ void html_parse(const char* html, RenderList* list)
                 }
 
             } else if (!is_close && strcmp(tname, "button") == 0) {
+                const char* content_start = p;
+                while (*p) {
+                    if (*p == '<') {
+                        const char* q = p;
+                        static const char* closetag = "</button";
+                        int match = 1;
+                        for (int ci = 0; closetag[ci]; ci++) {
+                            if (*q == '\0') { match = 0; break; }
+                            char c1 = closetag[ci], c2 = *q;
+                            if (c2 >= 'A' && c2 <= 'Z') c2 += 32;
+                            if (c1 != c2) { match = 0; break; }
+                            q++;
+                        }
+                        if (match) break;
+                    }
+                    p++;
+                }
+                int inner_len = (int)(p - content_start);
+
                 if (list->count < MAX_RENDER_ELEMENTS) {
                     RenderElement* el = &list->elements[list->count++];
                     memset(el, 0, sizeof(*el));
@@ -501,9 +752,24 @@ void html_parse(const char* html, RenderList* list)
                     el->form_id = state.current_form_id;
                     extract_attr_buf(tp, "name", el->field_name, sizeof(el->field_name));
                     extract_attr_buf(tp, "value", el->field_value, sizeof(el->field_value));
-                    if (el->field_value[0] == '\0') strcpy(el->field_value, "Submit");
+                    if (el->field_value[0] == '\0') { // fixed so actual button text is not ignored
+                        const char* s = content_start;
+                        const char* e = content_start + inner_len;
+                        while (s < e && (*s == ' ' || *s == '\n' || *s == '\t' || *s == '\r')) s++;
+                        while (e > s && (e[-1] == ' ' || e[-1] == '\n' || e[-1] == '\t' || e[-1] == '\r')) e--;
+                        int fl = (int)(e - s);
+                        if (fl > (int)sizeof(el->field_value) - 1) fl = (int)sizeof(el->field_value) - 1;
+                        memcpy(el->field_value, s, fl);
+                        el->field_value[fl] = '\0';
+                        decode_entities(el->field_value);
+                        if (el->field_value[0] == '\0') strcpy(el->field_value, "Submit");
+                    }
                     el->input_width = 80;
                 }
+
+                while (*p && *p != '>') p++;
+                if (*p == '>') p++;
+                last_was_space = TRUE;
 
             } else if (!is_close && strcmp(tname, "img") == 0) {
                 if (list->count < MAX_RENDER_ELEMENTS) {

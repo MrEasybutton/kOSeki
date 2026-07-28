@@ -1,4 +1,5 @@
 #include "bae.h"
+#include "serial.h"
 #include "8259_pic.h"
 #include "kheap.h"
 #include "console.h"
@@ -47,6 +48,14 @@ void mouse_write(uint8 data) {
 uint8 mouse_read(void) {
     mouse_wait(FALSE);
     return inportb(MOUSE_DATA_PORT);
+}
+
+static BOOL mouse_write_n_ack(uint8 cmd) {
+    for (int attempt = 0; attempt < 3; attempt++) {
+        mouse_write(cmd);
+        if (mouse_read() == MOUSE_ACKNOWLEDGE) return TRUE;
+    }
+    return FALSE;
 }
 
 void get_mouse_status(char b, MOUSE_STATUS *s) {
@@ -108,6 +117,8 @@ void m_render(int x, int y) {
 void mouse_handler(REGISTERS *r) {
     static uint8 cycle;
     static char b[3];
+    static int dbg = 0;
+    if (dbg < 3) { kprint("[bae] mouse irq fired\n"); dbg++; }
     
     if (cycle < 2) {
         b[cycle] = mouse_read();
@@ -121,8 +132,10 @@ void mouse_handler(REGISTERS *r) {
         int w = cursor_width + 1;
         int h = cursor_height + 1;
 
-        int dx = ((sint8)b[1] * g_mouse_sensitivity) / 100;
-        int dy = ((sint8)b[2] * g_mouse_sensitivity) / 100;
+        int sens = g_mouse_sensitivity;
+        if (sens < 1) sens = 1;
+        int dx = ((sint8)b[1] * sens) / 100;
+        int dy = ((sint8)b[2] * sens) / 100;
 
         g_mouse_x_pos += dx;
         g_mouse_y_pos -= dy;
@@ -148,15 +161,17 @@ void set_mouse_rate(uint8 rate) {
     outportb(MOUSE_DATA_PORT, MOUSE_CMD_SAMPLE_RATE);
     
     if ((s = mouse_read()) != MOUSE_ACKNOWLEDGE) {
-        printf("error: failed to send mouse sample rate command\n");
+        kprint("[bae] failed to send mouse sample rate command\n");
         return;
     }
     outportb(MOUSE_DATA_PORT, rate);
     if ((s = mouse_read()) != MOUSE_ACKNOWLEDGE)
-        printf("error: failed to send mouse sample rate data\n");
+        kprint("[bae] failed to send mouse sample rate data\n");
 }
 
 void mouse_init(void) {
+    extern void splash();
+    splash("init bae...");
     uint8 s;
 
     g_mouse_x_pos = SCREEN_WIDTH / 2;
@@ -185,8 +200,10 @@ void mouse_init(void) {
     mouse_wait(TRUE);
     outportb(PS2_CMD_PORT, 0xA8);
 
-    outportb(MOUSE_DATA_PORT, MOUSE_CMD_MOUSE_ID);
-    mouse_read();
+    mouse_write(MOUSE_CMD_MOUSE_ID);
+    if (mouse_read() != MOUSE_ACKNOWLEDGE)
+        kprint("[bae] mouse did not ack ID command\n");
+    mouse_read(); // consume device id
 
     set_mouse_rate(67);
 
@@ -199,11 +216,17 @@ void mouse_init(void) {
     mouse_wait(TRUE);
     outportb(MOUSE_DATA_PORT, s);
 
-    mouse_write(MOUSE_CMD_SET_DEFAULTS);
-    if (mouse_read() != MOUSE_ACKNOWLEDGE) return;
+    if (!mouse_write_n_ack(MOUSE_CMD_SET_DEFAULTS)) {
+        kprint("[bae] failed to ack set_defaults\n");
+        return;
+    }
 
-    mouse_write(MOUSE_CMD_ENABLE_PACKET_STREAMING);
-    if (mouse_read() != MOUSE_ACKNOWLEDGE) return;
+    if (!mouse_write_n_ack(MOUSE_CMD_ENABLE_PACKET_STREAMING)) {
+        kprint("[bae] failed to ack enable_packet_sstreaming\n");
+        return;
+    }
 
     register_interrupt_handler(IRQ_BASE + 12, mouse_handler);
+    pic8259_unmask(12);
+    kprint("[bae] mouse init complete! (irq12 registered)\n");
 }

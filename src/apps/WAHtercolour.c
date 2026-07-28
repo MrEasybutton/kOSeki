@@ -185,10 +185,7 @@ static void neu_raised(int x, int y, int w, int h) {
 
     rect(x + 2, y + 2, w - 2, h - 2, COLOR_WAH_PANEL);
 
-    neu_border(
-        x, y, w, h,
-        COLOR_WAH_BORDER_LIGHT,
-        COLOR_WAH_BORDER_DARK);
+    neu_border(x, y, w, h, COLOR_WAH_BORDER_LIGHT, COLOR_WAH_BORDER_DARK);
 }
 
 static void neu_inset(int x, int y, int w, int h, uint32 fill) {
@@ -200,10 +197,7 @@ static void neu_inset(int x, int y, int w, int h, uint32 fill) {
 
     rect(x + 2, y + 2, w - 2, h - 2, fill);
 
-    neu_border(
-        x, y, w, h,
-        COLOR_WAH_BORDER_DARK,
-        COLOR_WAH_BORDER_LIGHT);
+    neu_border(x, y, w, h, COLOR_WAH_BORDER_DARK, COLOR_WAH_BORDER_LIGHT);
 }
 
 static void clear_canvas(WAHtercolourAppData* app_data) {
@@ -557,7 +551,7 @@ static void save_canvas(WAHtercolourAppData* app_data) {
     FAT_dirent* existing = fat_find_file(path);
     if (!existing) fat_create_file(path); else kfree(existing);
     Bitmap bmp; bmp.width = WAH_CANVAS_WIDTH; bmp.height = WAH_CANVAS_HEIGHT; bmp.data = app_data->canvas_pixels;
-    int saved = (strcmp(extension, ".BMP") == 0) ? save_bmp(path, &bmp) : save_wah_image(path, &bmp);
+    int saved = (strcmp(extension, ".BMP") == 0) ? save_bmp(path, &bmp) : save_wah(path, &bmp);
     if (saved == 0) {
         strcpy(app_data->current_filename, normalized);
         app_data->dirty = FALSE;
@@ -725,7 +719,6 @@ static void stroke_to(WAHtercolourAppData* app_data, int x, int y) {
     for (int i = 0; i <= steps; i++) draw_brush_at(app_data, app_data->last_draw_x + dx * i / steps, app_data->last_draw_y + dy * i / steps);
 }
 
-// a lot of bs callbacks
 static void canvas_draw_cb(PON_Comp* comp, int ax, int ay);
 static void canvas_mouse_down_cb(PON_Comp* comp, int rx, int ry);
 static void canvas_mouse_up_cb(PON_Comp* comp, int rx, int ry);
