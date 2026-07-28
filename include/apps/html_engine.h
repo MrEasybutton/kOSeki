@@ -60,6 +60,9 @@ typedef struct {
     int form_count;
 
     int focused_element;
+    
+    BOOL has_page_bg;
+    uint32 page_bg_color;
 } RenderList;
 
 void html_parse(const char* html, RenderList* list);

@@ -1,4 +1,5 @@
 #include "kernel.h"
+#include "cmdtree.h"
 #include "console.h"
 #include "string.h"
 #include "gdt.h"
@@ -9,6 +10,7 @@
 #include "graphics.h"
 #include "ide.h"
 #include "pmm.h"
+#include "ports.h"
 #include "kheap.h"
 #include "vesa.h"
 #include "bitmap.h"
@@ -42,15 +44,16 @@
 #include "apps/CLStudio.h"
 #include "baux2/baux2.h"
 
-#define PROMPT_TEXT "$BIBOO > "
-
 int CLOCK_X = 880;
 int CLOCK_Y = 3;
+
+uint32 PM1A_CNT_BLK, PM1B_CNT_BLK = 0;
 
 KERNEL_MEMORY_MAP g_kmap;
 uint8 g_video_mode = VIDEO_MODE_TEXT;
 
 extern char* fat_read_file(char* fpath);
+extern void cmd(char* command_line, char* pbsh_buf, int* pbsh_len);
 
 int atoi(const char* str) {
     int result = 0;
@@ -130,7 +133,7 @@ static void draw_bootfrm(const char* title, const char* message) {
     swapbuf();
 }
 
-static void splash(const char* message) {
+void splash(const char* message) {
     if (vesa_init(SCREEN_WIDTH, SCREEN_HEIGHT, 32) < 0) return;
     draw_bootfrm("kOSeki", message ? message : "BOOTING...");
 }
@@ -154,32 +157,51 @@ void delay(uint32 value) {
     }
 }
 
-// really need a better way to handle this, adding registry or smth in v3.1
-extern void launch_preferences();
-extern void launch_casefiles();
-extern void launch_SBG();
-extern void launch_clp();
-extern void launch_doom();
-extern void launch_gawrculator();
-extern void launch_baetracer();
+extern BOOL _kb_combo(BOOL* was_pressed, uint8 key1, uint8 key2);
+static BOOL _kb_reboot(void) {
+    static BOOL was_pressed = FALSE;
+    return _kb_combo(&was_pressed, SCAN_CODE_KEY_LEFT_CTRL, SCAN_CODE_KEY_L);
+}
+static BOOL _kb_shutdown(void) {
+    static BOOL was_pressed = FALSE;
+    return _kb_combo(&was_pressed, SCAN_CODE_KEY_LEFT_CTRL, SCAN_CODE_KEY_K);
+}
 
-void launch_novella_df() { launch_novella(NULL, 0); }
-void launch_wahtercolour_df() { launch_wahtercolour(NULL); }
-void launch_cls_df() { launch_cls(NULL); }
+static inline void outb(uint16 port, uint8 val) {
+    asm volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
+}
 
-IconDef icons[] = {
-    {"SYSTEM/prf-ic.bmp", launch_preferences},
-    {"SYSTEM/peb-ic.bmp", launch_pbsh},
-    {"SYSTEM/iry-ic.bmp", launch_cls_df},
-    {"SYSTEM/ame-ic.bmp", launch_casefiles},
-    {"SYSTEM/nov-ic.bmp", launch_novella_df},
-    {"SYSTEM/wah-ic.bmp", launch_wahtercolour_df},
-    {"SYSTEM/ggq-ic.bmp", launch_SBG},
-    {"SYSTEM/rao-ic.bmp", launch_doom},
-    {"SYSTEM/mor-ic.bmp", launch_reaper},
-    {"SYSTEM/gur-ic.bmp", launch_gawrculator},
-    {"SYSTEM/bae-ic.bmp", launch_baetracer}
-};
+static inline void outw(uint16 port, uint16 val) {
+    asm volatile ("outw %0, %1" : : "a"(val), "Nd"(port));
+}
+
+void reboot(void) {
+    asm volatile("cli");
+    outb(0x64, 0xFE);
+    while (1) asm volatile("hlt");
+}
+
+void shutdown(uint32 pm1a_cnt, uint32 pm1b_cnt) {
+    asm volatile("cli");
+
+    // no fadt parsed? fallback to kb reset
+    if (pm1a_cnt == 0) {
+        outb(0x64, 0xFE);
+        while (1) asm volatile("hlt");
+    }
+
+    uint16 slp_en = (1 << 13);
+    uint16 slp_typ[] = { 5, 0, 7, 1, 2 }; // commons
+
+    for (int i = 0; i < 5; i++) {
+        uint16 pl = (slp_typ[i] << 10) | slp_en;
+        outw((uint16)pm1a_cnt, pl);
+        if (pm1b_cnt) outw((uint16)pm1b_cnt, pl);
+        for (volatile int d = 0; d < 200000; d++);
+    }
+
+    while (1) asm volatile("hlt");
+}
 
 const int icon_count = sizeof(icons) / sizeof(icons[0]);
 
@@ -254,682 +276,6 @@ BOOL is_cat(char *b) {
         if(b[3]==' '||b[3]=='\0')
             return TRUE;
     return FALSE;
-}
-
-void trim_pbsh_buf(char* pbsh_buf, int* pbsh_len) {
-    if (*pbsh_len > (MAX_SHBUF_SIZE * 3) / 4) {
-        int keep_from = *pbsh_len / 2;
-        
-        for (int i = keep_from; i < *pbsh_len; i++) {
-            if (pbsh_buf[i] == '\n') {
-                keep_from = i + 1;
-                break;
-            }
-        }
-        
-        int new_len = *pbsh_len - keep_from;
-        for (int i = 0; i < new_len; i++) {
-            pbsh_buf[i] = pbsh_buf[keep_from + i];
-        }
-        pbsh_buf[new_len] = '\0';
-        *pbsh_len = new_len;
-    }
-}
-
-void pbsh_buf_print(char* pbsh_buf, int* pbsh_len, const char* str) {
-    int str_len = strlen(str);
-    if (*pbsh_len + str_len < MAX_SHBUF_SIZE - 1) {
-        strcpy(pbsh_buf + *pbsh_len, str);
-        *pbsh_len += str_len;
-        pbsh_buf[*pbsh_len] = '\0';
-    }
-}
-
-void proc_bx2(char* filename, char* pbsh_buf, int* pbsh_len) {
-    char path[256] = "/";
-    strcat(path, filename);
-
-    char* content = fat_read_file(path);
-    if (!content) {
-        pbsh_buf_print(pbsh_buf, pbsh_len, "Error: Could not read file '");
-        pbsh_buf_print(pbsh_buf, pbsh_len, filename);
-        pbsh_buf_print(pbsh_buf, pbsh_len, "'.\n");
-        return;
-    }
-
-    Process* p = create_process(filename);
-    if (!p) {
-        pbsh_buf_print(pbsh_buf, pbsh_len, "Error: Could not create process for script.\n");
-        kfree(content);
-        return;
-    }
-
-    BAUx2_d* baux2_data = (BAUx2_d*)kmalloc(sizeof(BAUx2_d));
-    memset(baux2_data, 0, sizeof(BAUx2_d));
-    p->data = baux2_data;
-
-    // save then swaps
-    pbshPrint old_conx = g_pbsh_print;
-    baux2_print_t old_handler = baux2_print_handler;
-    extern int g_baux2_curr_pid;
-    int old_pid = g_baux2_curr_pid;
-
-    g_pbsh_print = (pbshPrint){ pbsh_buf, pbsh_len };
-    baux2_print_handler = pbsh_bx2_print;
-    g_baux2_curr_pid = p->pid;
-
-    baux2_run(content);
-
-    //restore
-    baux2_print_handler = old_handler;
-    g_baux2_curr_pid = old_pid;
-    g_pbsh_print = old_conx;
-
-    if (!p->window_exists) {
-        baux2_cleanup_process(p);
-        cleanup_process(p->pid);
-    }
-}
-
-// rename the helps
-
-void cmd(char* command_line, char* pbsh_buf, int* pbsh_len) {
-    char* cmd_copy = (char*)malloc(strlen(command_line) + 1);
-    if (!cmd_copy) {
-        pbsh_buf_print(pbsh_buf, pbsh_len, "\nError: Malloc failed.\n");
-        pbsh_buf_print(pbsh_buf, pbsh_len, PROMPT_TEXT);
-        return;
-    }
-    strcpy(cmd_copy, command_line);
-
-    char* trimmed_cmd = cmd_copy;
-    while (*trimmed_cmd == ' ' || *trimmed_cmd == '\t') { trimmed_cmd++; }
-
-    char* end = trimmed_cmd + strlen(trimmed_cmd) - 1;
-    while (end > trimmed_cmd && (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r')) {
-        end--;
-    }
-    *(end + 1) = '\0';
-
-
-    if (*trimmed_cmd == '\0') {
-        kfree(cmd_copy);
-        pbsh_buf_print(pbsh_buf, pbsh_len, PROMPT_TEXT);
-        return;
-    }
-
-    char* command = strtok(trimmed_cmd, " \t");
-    kprint("[CMD] received: '%s'\n", command);
-
-    if (strcmp(command, "beep") == 0) {
-        char* arg = strtok(NULL, "");
-        if (arg) {
-            while (*arg == ' ' || *arg == '\t') arg++;
-        }
-        
-        if (arg && *arg != '\0') {
-            pbsh_buf_print(pbsh_buf, pbsh_len, arg);
-            pbsh_buf_print(pbsh_buf, pbsh_len, "\n");
-        } else {
-            pbsh_buf_print(pbsh_buf, pbsh_len, "USAGE: beep {text}\n");
-        }
-    } 
-    else if (strcmp(command, "clear") == 0) {
-        *pbsh_len = 0;
-        pbsh_buf[0] = '\0';
-    }
-    else if (strcmp(command, "ls") == 0) {
-        char* output = get_ls("/");
-        if (output) {
-            pbsh_buf_print(pbsh_buf, pbsh_len, output);
-            kfree(output);
-        }
-    }
-    else if (strcmp(command, "baux2") == 0 || strcmp(command, "BAUx2") == 0) {
-        char* filename = strtok(NULL, " \t");
-        if (filename) {
-            proc_bx2(filename, pbsh_buf, pbsh_len);
-        } else {
-            pbsh_buf_print(pbsh_buf, pbsh_len, "USAGE: baux2 {file}\n");
-        }
-    }
-    else if (strcmp(command, "fetch") == 0) {
-        char* host = strtok(NULL, " \t");
-        if (host) {
-            extern void net_fetch(const char* host, char* pbsh_buf, int* pbsh_len);
-            net_fetch(host, pbsh_buf, pbsh_len);
-        } else {
-            pbsh_buf_print(pbsh_buf, pbsh_len, "USAGE: fetch {host}\n");
-        }
-    }
-    else if (strcmp(command, "johncat") == 0) {
-        char* filename = strtok(NULL, "");
-        if (filename) {
-            while (*filename == ' ' || *filename == '\t') filename++;
-            
-            if (*filename != '\0') {
-                char path[256];
-                if (filename[0] != '/') {
-                    strcpy(path, "/");
-                    strcat(path, filename);
-                } else {
-                    strcpy(path, filename);
-                }
-
-                char* file_content = fat_read_file(path);
-                if (file_content) {
-                    FAT_dirent* dirent = fat_find_file(path);
-                    if (dirent) {
-                        uint32 file_size = dirent->Size;
-                        kfree(dirent);
-                        
-                        char* display_buffer = (char*)malloc(file_size + 1);
-                        if (display_buffer) {
-                            memcpy(display_buffer, file_content, file_size);
-                            display_buffer[file_size] = '\0';
-                            pbsh_buf_print(pbsh_buf, pbsh_len, display_buffer);
-                            pbsh_buf_print(pbsh_buf, pbsh_len, "\n");
-                            kfree(display_buffer);
-                        }
-                        kfree(file_content);
-                    } else {
-                        kfree(file_content);
-                        pbsh_buf_print(pbsh_buf, pbsh_len, "There was an error reading the file.\n");
-                    }
-                } else {
-                    pbsh_buf_print(pbsh_buf, pbsh_len, "Couldn't find ");
-                    pbsh_buf_print(pbsh_buf, pbsh_len, filename);
-                    pbsh_buf_print(pbsh_buf, pbsh_len, ", or there was an error reading it.\n");
-                }
-            } else {
-                pbsh_buf_print(pbsh_buf, pbsh_len, "USAGE: johncat {file}\n");
-            }
-        } else {
-            pbsh_buf_print(pbsh_buf, pbsh_len, "USAGE: johncat {file}\n");
-        }
-    }
-    
-    else if (strcmp(command, "rock") == 0) {
-        char* filename = strtok(NULL, "");
-        if (filename) {
-            while (*filename == ' ' || *filename == '\t') filename++;
-            
-            if (*filename != '\0') {
-                char path[256];
-                if (filename[0] != '/') {
-                    strcpy(path, "/");
-                    strcat(path, filename);
-                } else {
-                    strcpy(path, filename);
-                }
-                
-                int result = fat_create_file(path);
-                if (result == 0) {
-                    pbsh_buf_print(pbsh_buf, pbsh_len, "created ");
-                    pbsh_buf_print(pbsh_buf, pbsh_len, filename);
-                    pbsh_buf_print(pbsh_buf, pbsh_len, " successfully! :D\n");
-                } else {
-                    pbsh_buf_print(pbsh_buf, pbsh_len, "Couldn't create that file (it may already exist).\n");
-                }
-            } else {
-                pbsh_buf_print(pbsh_buf, pbsh_len, "USAGE: rock {file}\n");
-            }
-        } else {
-            pbsh_buf_print(pbsh_buf, pbsh_len, "USAGE: rock {file}\n");
-        }
-    }
-
-    else if (strcmp(command, "stone") == 0) {
-        char* dirname = strtok(NULL, "");
-        if (dirname) {
-            while (*dirname == ' ' || *dirname == '\t') dirname++;
-            if (*dirname != '\0') {
-                char path[256];
-                if (dirname[0] != '/') {
-                    strcpy(path, "/");
-                    strcat(path, dirname);
-                } else {
-                    strcpy(path, dirname);
-                }
-                
-                int result = fat_create_dir(path);
-                if (result == 0) {
-                    pbsh_buf_print(pbsh_buf, pbsh_len, "created ");
-                    pbsh_buf_print(pbsh_buf, pbsh_len, dirname);
-                    pbsh_buf_print(pbsh_buf, pbsh_len, " successfully! :D\n");
-                } else {
-                    pbsh_buf_print(pbsh_buf, pbsh_len, "Couldn't create that folder (it may already exist).\n");
-                }
-            } else {
-                pbsh_buf_print(pbsh_buf, pbsh_len, "USAGE: stone {dir}\n");
-            }
-        } else {
-            pbsh_buf_print(pbsh_buf, pbsh_len, "USAGE: stone {dir}\n");
-        }
-    }
-    
-    else if (strcmp(command, "peb") == 0) {
-        char* pebname = strtok(NULL, "");
-        if (pebname) {
-            while (*pebname == ' ' || *pebname == '\t') pebname++;
-            
-            if (*pebname != '\0') {
-                char path[256];
-                if (pebname[0] != '/') {
-                    strcpy(path, "/");
-                    strcat(path, pebname);
-                } else {
-                    strcpy(path, pebname);
-                }
-
-                if (strstr(path, ".pebble") == NULL && strstr(path, ".PEBBLE") == NULL) {
-                    strcat(path, ".pebble");
-                }
-                
-                int result = fat_create_dir(path);
-                if (result == 0) {
-                    pbsh_buf_print(pbsh_buf, pbsh_len, "A Pebble has been spawned at ");
-                    pbsh_buf_print(pbsh_buf, pbsh_len, path);
-                    pbsh_buf_print(pbsh_buf, pbsh_len, " successfully! :D\n");
-                    
-                    char subpath[512];
-
-                    strcpy(subpath, path);
-                    strcat(subpath, "/run.bx2");
-                    fat_create_file(subpath);
-
-                    strcpy(subpath, path);
-                    strcat(subpath, "/manifest.jdon");
-                    fat_create_file(subpath);
-                    
-                } else {
-                    pbsh_buf_print(pbsh_buf, pbsh_len, "Couldn't create this Pebble (it may already exist).\n");
-                }
-            } else {
-                pbsh_buf_print(pbsh_buf, pbsh_len, "USAGE: peb {name}\n");
-            }
-        } else {
-            pbsh_buf_print(pbsh_buf, pbsh_len, "USAGE: peb {name}\n");
-        }
-    }
-    
-    else if (strcmp(command, "chuuni") == 0 || strcmp(command, "agent47") == 0) {
-        char* old_name = strtok(NULL, " \t");
-        char* new_name = strtok(NULL, "");
-        
-        if (new_name) {
-            while (*new_name == ' ' || *new_name == '\t') new_name++;
-        }
-        
-        if (old_name && new_name && *old_name != '\0' && *new_name != '\0') {
-            char old_path[256], new_path[256];
-            
-            if (old_name[0] != '/') {
-                strcpy(old_path, "/");
-                strcat(old_path, old_name);
-            } else {
-                strcpy(old_path, old_name);
-            }
-            
-            if (new_name[0] != '/') {
-                strcpy(new_path, "/");
-                strcat(new_path, new_name);
-            } else {
-                strcpy(new_path, new_name);
-            }
-            
-            int result = fat_rename_file(old_path, new_path);
-            if (result == 0) {
-                pbsh_buf_print(pbsh_buf, pbsh_len, "Biboo has renamed ");
-                pbsh_buf_print(pbsh_buf, pbsh_len, old_name);
-                pbsh_buf_print(pbsh_buf, pbsh_len, " to ");
-                pbsh_buf_print(pbsh_buf, pbsh_len, new_name);
-                pbsh_buf_print(pbsh_buf, pbsh_len, ".\n");
-            } else {
-                pbsh_buf_print(pbsh_buf, pbsh_len, "Biboo couldn't rename the file.\n");
-            }
-        } else {
-            pbsh_buf_print(pbsh_buf, pbsh_len, "USAGE: chuuni {current} {new}\n");
-        }
-    }
-    
-    else if (strcmp(command, "shiorin") == 0) {
-        char* filename = strtok(NULL, " \t");
-        char* text = strtok(NULL, "");
-        
-        if (text) { while (*text == ' ' || *text == '\t') text++; }
-        
-        if (filename && text && *filename != '\0' && *text != '\0') {
-            char path[256];
-            if (filename[0] != '/') {
-                strcpy(path, "/");
-                strcat(path, filename);
-            } else {
-                strcpy(path, filename);
-            }
-            
-            int result = fat_write_file(path, text, strlen(text));
-            if (result == 0) {
-                pbsh_buf_print(pbsh_buf, pbsh_len, "Shiori has overwritten ");
-                pbsh_buf_print(pbsh_buf, pbsh_len, filename);
-                pbsh_buf_print(pbsh_buf, pbsh_len, ".\n");
-            } else {
-                pbsh_buf_print(pbsh_buf, pbsh_len, "Couldn't overwrite the file (it may not exist).\n");
-            }
-        } else {
-            pbsh_buf_print(pbsh_buf, pbsh_len, "USAGE: shiorin {file} {text}\n");
-        }
-    }
-    
-    else if (strcmp(command, "nov") == 0) {
-        char* filename = strtok(NULL, " \t");
-        char* text = strtok(NULL, "");
-        
-        if (text) {
-            while (*text == ' ' || *text == '\t') text++;
-        }
-        
-        if (filename && text && *filename != '\0' && *text != '\0') {
-            char path[256];
-            if (filename[0] != '/') {
-                strcpy(path, "/");
-                strcat(path, filename);
-            } else {
-                strcpy(path, filename);
-            }
-            
-            int result = fat_append_file(path, text, strlen(text));
-            if (result == 0) {
-                pbsh_buf_print(pbsh_buf, pbsh_len, "Shiori appended ");
-                pbsh_buf_print(pbsh_buf, pbsh_len, text);
-                pbsh_buf_print(pbsh_buf, pbsh_len, " to ");
-                pbsh_buf_print(pbsh_buf, pbsh_len, filename);
-                pbsh_buf_print(pbsh_buf, pbsh_len, ".\n");
-            } else {
-                pbsh_buf_print(pbsh_buf, pbsh_len, "Couldn't append to that file (it may not exist).\n");
-            }
-        } else {
-            pbsh_buf_print(pbsh_buf, pbsh_len, "USAGE: nov {file} {text}\n");
-        }
-    }
-    
-    else if (strcmp(command, "pickaxe") == 0 || strcmp(command, "mine") == 0) {
-        char* filename = strtok(NULL, "");
-        if (filename) {
-            while (*filename == ' ' || *filename == '\t') filename++;
-            
-            if (*filename != '\0') {
-                char path[256];
-                if (filename[0] != '/') {
-                    strcpy(path, "/");
-                    strcat(path, filename);
-                } else {
-                    strcpy(path, filename);
-                }
-                
-                int result = fat_delete_file(path);
-                if (result == 0) {
-                    pbsh_buf_print(pbsh_buf, pbsh_len, "Kaela has deleted ");
-                    pbsh_buf_print(pbsh_buf, pbsh_len, filename);
-                    pbsh_buf_print(pbsh_buf, pbsh_len, "! bwehhh\n");
-                } else {
-                    pbsh_buf_print(pbsh_buf, pbsh_len, "Couldn't delete that file (it may not exist).\n");
-                }
-            } else {
-                pbsh_buf_print(pbsh_buf, pbsh_len, "USAGE: pickaxe {file}\n");
-            }
-        } else {
-            pbsh_buf_print(pbsh_buf, pbsh_len, "USAGE: pickaxe {file}\n");
-        }
-    }
-    
-    else if (strcmp(command, "doom") == 0) {
-        launch_doom();
-    }
-    else if (strcmp(command, "prefs") == 0) {
-        launch_preferences();
-    }
-    else if (strcmp(command, "pbsh") == 0) {
-        launch_pbsh();
-    }
-    else if (strcmp(command, "casefiles") == 0) {
-        launch_casefiles();
-    }
-    else if (strcmp(command, "novella") == 0) {
-        launch_novella(NULL, 0);
-    }
-    else if (strcmp(command, "cl_player") == 0) {
-        launch_cls_df();
-    }
-    else if (strcmp(command, "gura") == 0) {
-        launch_gawrculator();
-    }
-    else if (strcmp(command, "help") == 0) {
-        pbsh_buf_print(pbsh_buf, pbsh_len, "COMMANDS:\n");
-        pbsh_buf_print(pbsh_buf, pbsh_len, "beep > echo text to shell\n");
-        pbsh_buf_print(pbsh_buf, pbsh_len, "ls > list root\n");
-        pbsh_buf_print(pbsh_buf, pbsh_len, "johncat > read a file\n");
-        pbsh_buf_print(pbsh_buf, pbsh_len, "rock > create a file\n");
-        pbsh_buf_print(pbsh_buf, pbsh_len, "stone > create a folder\n");
-        pbsh_buf_print(pbsh_buf, pbsh_len, "nov > append text to a file\n");
-        pbsh_buf_print(pbsh_buf, pbsh_len, "shiorin > overwrite a file\n");
-        pbsh_buf_print(pbsh_buf, pbsh_len, "chuuni/agent47 > rename file\n");
-        pbsh_buf_print(pbsh_buf, pbsh_len, "pickaxe/mine > delete a file\n");
-        pbsh_buf_print(pbsh_buf, pbsh_len, "peb > create a Pebble\n");
-        pbsh_buf_print(pbsh_buf, pbsh_len, "clear > clear this shell\n");
-        pbsh_buf_print(pbsh_buf, pbsh_len, "karaoke > play audio file\n");
-        pbsh_buf_print(pbsh_buf, pbsh_len, "synth > play a synth\n");
-        pbsh_buf_print(pbsh_buf, pbsh_len, "br > play with BloodRaven\n");
-        pbsh_buf_print(pbsh_buf, pbsh_len, "launch an app by typing its name!\n");
-    }
-    else if (strcmp(command, "karaoke") == 0) {
-        char* filename = strtok(NULL, "");
-        if (filename) {
-            while (*filename == ' ' || *filename == '\t') filename++;
-            if (*filename != '\0') {
-                if (fat_find_file(filename)) {
-                    ac97_play(filename);
-                } else {
-                    pbsh_buf_print(pbsh_buf, pbsh_len, "Couldn't find ");
-                    pbsh_buf_print(pbsh_buf, pbsh_len, filename);
-                    pbsh_buf_print(pbsh_buf, pbsh_len, "!\n");
-                }
-            } else {
-                pbsh_buf_print(pbsh_buf, pbsh_len, "USAGE: karaoke {file}\n");
-            }
-        } else {
-            pbsh_buf_print(pbsh_buf, pbsh_len, "USAGE: karaoke {file}\n");
-        }
-    }
-    else if (strcmp(command, "synth") == 0) {
-        wave_type_t wave = WAVE_SINE;
-        uint32 freq_hz = 440;
-        uint32 duration_ms = 300;
-        uint8 volume = 70;
-        uint32 sample_rate = 48000;
-        BOOL got_args = FALSE;
-
-        char* token = strtok(NULL, " \t");
-
-        if (token && strcmp(token, "beep") == 0) {
-            ac97_synth_beep(); goto synth_done;
-        } else if (token && strcmp(token, "dangit") == 0) {
-            ac97_synth_dangit(); goto synth_done;
-        } else if (token && strcmp(token, "candyfeet") == 0) {
-            ac97_synth_tink(); goto synth_done;
-        } else if (token && strcmp(token, "laser") == 0) {
-            ac97_synth_laser(); goto synth_done;
-        }
-
-        while (token != NULL) {
-            if (strcmp(token, "--wave") == 0 || strcmp(token, "-w") == 0) {
-                token = strtok(NULL, " \t");
-                if (!token) break;
-                if (strcmp(token, "sine") == 0) wave = WAVE_SINE;
-                else if (strcmp(token, "square") == 0) wave = WAVE_SQUARE;
-                else if (strcmp(token, "saw") == 0) wave = WAVE_SAW;
-                else if (strcmp(token, "tri") == 0) wave = WAVE_TRIANGLE;
-                else if (strcmp(token, "noise") == 0) wave = WAVE_NOISE;
-                else {
-                    pbsh_buf_print(pbsh_buf, pbsh_len,
-                        "i don't recognise that wave\n");
-                    goto synth_done;
-                }
-                got_args = TRUE;
-
-            } else if (strcmp(token, "--freq") == 0 || strcmp(token, "-f") == 0) {
-                token = strtok(NULL, " \t");
-                if (!token) break;
-                freq_hz = (uint32)atoi(token);
-                got_args = TRUE;
-
-            } else if (strcmp(token, "--dur") == 0 || strcmp(token, "-d") == 0) {
-                token = strtok(NULL, " \t");
-                if (!token) break;
-                duration_ms = (uint32)atoi(token);
-                got_args = TRUE;
-
-            } else if (strcmp(token, "--vol") == 0 || strcmp(token, "-v") == 0) {
-                token = strtok(NULL, " \t");
-                if (!token) break;
-                volume = (uint8)atoi(token);
-                got_args = TRUE;
-
-            } else {
-                pbsh_buf_print(pbsh_buf, pbsh_len, "idk what ");
-                pbsh_buf_print(pbsh_buf, pbsh_len, token);
-                pbsh_buf_print(pbsh_buf, pbsh_len, " is, try another flag\n");
-                goto synth_done;
-            }
-
-            token = strtok(NULL, " \t");
-        }
-
-        if (!got_args) {
-            pbsh_buf_print(pbsh_buf, pbsh_len,
-                "USAGE: synth {demo/flags}\n"
-                "demos: beep/dangit/candyfeet/laser\n"
-                "flags:\n"
-                "-wave/-w sine/square/saw/tri/noise\n"
-                "-freq/-f <hz> (default is 440)\n"
-                "-dur/-d <ms> (default is 300)\n"
-                "-vol/-v <0-100>(default is 70)\n"
-                "e.g. synth -w sine -f 670 -d 360 -v 67\n");
-            goto synth_done;
-        }
-
-        {
-            synth_buf_t* buf = ac97_synth_generate(wave, freq_hz, duration_ms, volume, sample_rate);
-            if (buf) {
-                ac97_play_synth(buf);
-                kfree(buf);
-            } else {
-                pbsh_buf_print(pbsh_buf, pbsh_len, "synth: buffer allocation failed\n");
-            }
-        }
-
-        synth_done:;
-    }
-    else if (strcmp(command, "br") == 0) {
-        float f0_hz = 440.0f;
-        vowel_t vowel = VOWEL_A;
-        uint32 duration_ms = 500;
-        uint8 volume = 75;
-        uint32 sample_rate = 48000;
-        BOOL got_args = FALSE;
-
-        char* token = strtok(NULL, " \t");
-        
-        if (token && strcmp(token, "sing") == 0) {
-            ac97_synth_opera(); goto opera_done;
-        }
-
-        while (token != NULL) {
-            if (strcmp(token, "--freq") == 0 || strcmp(token, "-f") == 0) {
-                token = strtok(NULL, " \t");
-                if (!token) break;
-                f0_hz = (float)atoi(token);
-                got_args = TRUE;
-
-            } else if (strcmp(token, "--vowel") == 0 || strcmp(token, "-V") == 0) {
-                token = strtok(NULL, " \t");
-                if (!token) break;
-                if (strcmp(token, "a") == 0) vowel = VOWEL_A;
-                else if (strcmp(token, "e") == 0) vowel = VOWEL_E;
-                else if (strcmp(token, "i") == 0) vowel = VOWEL_I;
-                else if (strcmp(token, "o") == 0) vowel = VOWEL_O;
-                else if (strcmp(token, "u") == 0) vowel = VOWEL_U;
-                else {
-                    pbsh_buf_print(pbsh_buf, pbsh_len,
-                        "that aint a vowel dawg. pick again: a e i o u\n");
-                    goto opera_done;
-                }
-                got_args = TRUE;
-
-            } else if (strcmp(token, "--dur") == 0 || strcmp(token, "-d") == 0) {
-                token = strtok(NULL, " \t");
-                if (!token) break;
-                duration_ms = (uint32)atoi(token);
-                got_args = TRUE;
-
-            } else if (strcmp(token, "--vol") == 0 || strcmp(token, "-v") == 0) {
-                token = strtok(NULL, " \t");
-                if (!token) break;
-                volume = (uint8)atoi(token);
-                got_args = TRUE;
-
-            } else if (strcmp(token, "--rate") == 0 || strcmp(token, "-r") == 0) {
-                token = strtok(NULL, " \t");
-                if (!token) break;
-                sample_rate = (uint32)atoi(token);
-                got_args = TRUE;
-
-            } else {
-                pbsh_buf_print(pbsh_buf, pbsh_len, "I don't recognise ");
-                pbsh_buf_print(pbsh_buf, pbsh_len, token);
-                pbsh_buf_print(pbsh_buf, pbsh_len, " as a flag.\n");
-                goto opera_done;
-            }
-            token = strtok(NULL, " \t");
-        }
-
-        if (!got_args) {
-            pbsh_buf_print(pbsh_buf, pbsh_len,
-                "USAGE: br { sing / (flags) }\n"
-                "flags:\n" 
-                "-freq/-f <hz> (default is 440)\n"
-                "-vowel/-V a/e/i/o/u (default is a)\n"
-                "-dur/-d <ms> (default is 500)\n"
-                "-vol/-v <0-100> (default is 75)\n"
-                "-rate/-r <hz> (default is 48000)\n"
-                "e.g. br -f 392 -V o -d 800\n");
-            goto opera_done;
-        }
-
-        {
-            synth_buf_t* buf = ac97_synth_opera_note(f0_hz, vowel, duration_ms, volume, sample_rate);
-            if (buf) {
-                ac97_play_synth(buf);
-                ac97_synth_free(buf);
-            } else {
-                pbsh_buf_print(pbsh_buf, pbsh_len, "opera buffer allocation failed\n");
-            }
-        }
-
-        opera_done:;
-    }
-    else if (strcmp(command, "\n") == 0) {
-        //pbsh_buf_print(pbsh_buf, pbsh_len, "\n");
-    }
-    else {
-        pbsh_buf_print(pbsh_buf, pbsh_len, command);
-        pbsh_buf_print(pbsh_buf, pbsh_len, ": command not found");
-        pbsh_buf_print(pbsh_buf, pbsh_len, "\nType 'help' for cmds\n");
-    }
-
-    kfree(cmd_copy);
-    trim_pbsh_buf(pbsh_buf, pbsh_len);
-    pbsh_buf_print(pbsh_buf, pbsh_len, PROMPT_TEXT);
 }
 
 void wllp_rendcache(void) {
@@ -1043,6 +389,47 @@ void wllp_asmcache(void) {
     kprint("built wallpaper cache: %dx%d\n", screen_width, screen_height);
 }
 
+typedef struct __attribute__((packed)) {
+    char sig[8];
+    uint8 checksum;
+    char oem_id[6];
+    uint8 revision;
+    uint32 rsdt_addr;
+} ACPI_RSDP;
+
+typedef struct __attribute__((packed)) {
+    char sig[4];
+    uint32 length;
+    uint8 rev;
+    uint8 checksum;
+    char oem_id[6];
+    char oem_table_id[8];
+    uint32 oem_rev;
+    uint32 creator_id;
+    uint32 creator_rev;
+} ACPI_SDT_HEADER;
+
+void acpi_init(void) {
+    ACPI_RSDP* rsdp = NULL;
+    for (uint32 addr = 0xE0000; addr < 0x100000; addr += 16) {
+        if (!strncmp((char*)addr, "RSD PTR ", 8)) { rsdp = (ACPI_RSDP*)addr; break; }
+    }
+    if (!rsdp) return; // pm1A stay 0 for reset
+
+    ACPI_SDT_HEADER* rsdt = (ACPI_SDT_HEADER*)rsdp->rsdt_addr;
+    uint32* entries = (uint32*)((uint8*)rsdt + sizeof(ACPI_SDT_HEADER));
+    int count = (rsdt->length - sizeof(ACPI_SDT_HEADER)) / 4;
+
+    for (int i = 0; i < count; i++) {
+        ACPI_SDT_HEADER* table = (ACPI_SDT_HEADER*)entries[i];
+        if (!strncmp(table->sig, "FACP", 4)) {
+            PM1A_CNT_BLK = *(uint32*)((uint8*)table + 64);
+            PM1B_CNT_BLK = *(uint32*)((uint8*)table + 68);
+            break;
+        }
+    }
+}
+
 void kmain(unsigned long magic __attribute__((unused)), unsigned long addr) {
     g_video_mode = VIDEO_MODE_TEXT;
     console_init(COLOR_BRIGHT_MAGENTA, COLOR_BLUE);
@@ -1050,7 +437,10 @@ void kmain(unsigned long magic __attribute__((unused)), unsigned long addr) {
     MULTIBOOT_INFO *mboot_info;
     gdt_init();
     idt_init();
-    register_interrupt_handler(IRQ_BASE + IRQ0_TIMER, timer_handler);
+    outportb(0x22, 0x70); // try to select IMCR register
+    outportb(0x23, 0x01); // route interr thru 8259
+
+    //register_interrupt_handler(IRQ_BASE + IRQ0_TIMER, timer_handler);
     printf("Biboo is preparing...\n");
     printf("please wait warmly :D\n");
 
@@ -1069,9 +459,34 @@ void kmain(unsigned long magic __attribute__((unused)), unsigned long addr) {
     printf("\n\n");
     
     mboot_info = (MULTIBOOT_INFO *)addr;
+    
+    if ((mboot_info->flags & 0x8) && mboot_info->modules_count > 0) {
+        MULTIBOOT_MODULE *mods = (MULTIBOOT_MODULE *)mboot_info->modules_addr;
+        g_ramdisk_base = (uint8 *)mods[0].mod_start;
+        g_ramdisk_size = mods[0].mod_end - mods[0].mod_start;
+        g_using_ramdisk = 1;
+    }
+
     if (get_mm(&g_kmap, mboot_info) < 0) return;
     pmm_init(g_kmap.available.start_addr, g_kmap.available.size);
     pmm_init_region(g_kmap.available.start_addr, g_kmap.available.size);
+
+    acpi_init();
+
+    if (g_using_ramdisk) {
+        uint32 base = (uint32)g_ramdisk_base;
+        uint32 ofs = base % PMM_BLOCK_SIZE;
+        uint32 reserve_size = g_ramdisk_size + ofs;
+        if (reserve_size % PMM_BLOCK_SIZE)
+            reserve_size += PMM_BLOCK_SIZE - (reserve_size % PMM_BLOCK_SIZE);
+        pmm_deinit_region(base - ofs, reserve_size);
+        printf("[multiboot] 0x%x - 0x%x (%u bytes), reserved 0x%x - 0x%x from PMM\n",
+                base, base + g_ramdisk_size, g_ramdisk_size,
+                base - ofs, (base - ofs) + reserve_size);
+        kprint("[multiboot] 0x%x - 0x%x (%u bytes), reserved 0x%x - 0x%x from PMM\n",
+                base, base + g_ramdisk_size, g_ramdisk_size,
+                base - ofs, (base - ofs) + reserve_size);
+    }
 
     uint32_t free_blocks = pmm_get_max_blocks() - pmm_get_used_blocks();
 
@@ -1079,21 +494,39 @@ void kmain(unsigned long magic __attribute__((unused)), unsigned long addr) {
     void *start = pmm_alloc_blocks(heap_blocks);
     
     if (start == NULL) {
-        printf("CRITICAL ERROR: Failed to allocate memory for heap!\n");
-        printf("Available size: %d, Free blocks: %d\n", g_kmap.available.size, free_blocks);
+        printf("!CRITICAL! Failed to allocate memory for heap!\n");
+        printf("available: %d, free blocks: %d\n", g_kmap.available.size, free_blocks);
+        kprint("!CRITICAL! Failed to allocate memory for heap!\n");
+        kprint("available: %d, free blocks: %d\n", g_kmap.available.size, free_blocks);
         for(;;);
     }
 
     void *end = (void*)((uint32)start + (heap_blocks * PMM_BLOCK_SIZE));
     k_init(start, end);
     init_procsys();
-    keyboard_init();
+    
     timer_init(67);
     sti();
 
     splash("preparing ur storage");
 
     ata_init();
+
+    // check ATA/ATAPI (i beeped up the img loading, you can use it to check the found drives and their models)
+    // char ide_summary[512];
+    // ide_get_summary(ide_summary, sizeof(ide_summary));
+    // splash(ide_summary);
+    // while (kb_getchar_nb() == 0) { press any key }
+
+    // point IDE to module e.g. GRUB cfg arg, fallback is ata_init
+    if ((mboot_info->flags & 0x8) && mboot_info->modules_count > 0) {
+        MULTIBOOT_MODULE *mods = (MULTIBOOT_MODULE *)mboot_info->modules_addr;
+        g_ramdisk_base = (uint8 *)mods[0].mod_start;
+        g_ramdisk_size = mods[0].mod_end - mods[0].mod_start;
+        g_using_ramdisk = 1;
+        kprint("[ATA] module found: 0x%x - 0x%x (%u bytes), using as ramdisk\n", mods[0].mod_start, mods[0].mod_end, g_ramdisk_size);
+    }
+
     printf("\n\n\n\n\n\n\n\n\n");
     fat_init();
     printf("Scanning storage left...\n");
@@ -1106,13 +539,15 @@ void kmain(unsigned long magic __attribute__((unused)), unsigned long addr) {
     printf("ROCK IN\n");
     
     init_gui();
-    mouse_init();
 
     pci_init();
     
     extern void tester();
     tester();
     ac97_play("/SYSTEM/startup.wav");
+
+    keyboard_init();
+    mouse_init();
 
     net_send_arp_req(htonl((10 << 24) | (0 << 16) | (2 << 8) | 2));
     net_ping(htonl((10 << 24) | (0 << 16) | (2 << 8) | 2));
@@ -1189,6 +624,9 @@ void kmain(unsigned long magic __attribute__((unused)), unsigned long addr) {
                 kprint(" No active window.\n");
             }
         }
+
+        if (_kb_reboot()) reboot();
+        if (_kb_shutdown()) shutdown(PM1A_CNT_BLK, PM1B_CNT_BLK);
 
         if (g_video_mode == VIDEO_MODE_GRAPHICS) {
             m_update();

@@ -42,6 +42,25 @@ extern void delay(uint32 value);
 #define MAX_VOICES 256
 #define STREAM_BUFFER_SAMPLES (256 * 1024 / sizeof(sint16)) //128k samples
 
+#define PCI_CONFIG_ADDR 0xCF8
+#define PCI_CONFIG_DATA 0xCFC
+
+// do raw read for classes check (0x04, 0x01)
+// disable audio temporarily (for hardware!!) until I add intel HDA driver
+
+static uint32 ac97_pci_config_read_dword(uint8 bus, uint8 slot, uint8 func, uint8 offset) {
+    uint32 addr = (uint32)(0x80000000u | ((uint32)bus << 16) | ((uint32)slot << 11) | ((uint32)func << 8) | (offset & 0xFC));
+    outportl(PCI_CONFIG_ADDR, addr);
+    return inportl(PCI_CONFIG_DATA);
+}
+
+static BOOL ac97_is_compatible(uint8 bus, uint8 slot, uint8 func) {
+    uint32 class_reg = ac97_pci_config_read_dword(bus, slot, func, 0x08);
+    uint8 subclass = (class_reg >> 16) & 0xFF;
+    uint8 baseclass = (class_reg >> 24) & 0xFF;
+    return (baseclass == 0x04 && subclass == 0x01); //multimedia class and subclass addr
+}
+
 typedef struct {
     uint32 pointer;
     uint16 length;
@@ -72,6 +91,8 @@ typedef struct {
     uint32 mp3_chunk_size;
     uint32 mp3_chunk_offset;
     uint32 mp3_chunk_limit;
+
+    uint32 bytes_consumed;
 } audio_voice_t;
 
 static uint32 g_mixer_base = 0, g_bm_base = 0;
@@ -242,6 +263,11 @@ static void ac97_irq_handler(REGISTERS* regs) {
 }
 
 void ac97_init(uint8 bus, uint8 slot, uint8 func, uint8 irq) {
+    if (!ac97_is_compatible(bus, slot, func)) {
+        kprint("!WARNING! AC97: this device is not compatible, audio disabled\n");
+        return;
+    }
+
     pci_enable_bus_mastering(bus, slot, func);
     g_mixer_base = pci_get_bar(bus, slot, func, 0).base_address;
     g_bm_base = pci_get_bar(bus, slot, func, 1).base_address;
@@ -263,7 +289,11 @@ void ac97_init(uint8 bus, uint8 slot, uint8 func, uint8 irq) {
     while (!(inportl(g_bm_base + AC97_GLOB_STA) & AC97_GS_PCR) && timeout > 0) timeout--;
 
     if (timeout == 0) {
-        kprint("AC97: Error - Codec not ready (PCR timeout)!\n");
+        kprint("!WARNING! AC97: codec not ready (PCR timeout), audio disablved\n");
+        // zeroes, everything else will return no-op
+        g_mixer_base = 0;
+        g_bm_base = 0;
+        return;
     }
 
     // enable VRA
@@ -375,10 +405,11 @@ void ac97_update_streams(void) {
                 if (samples > 0) {
                     frames_decoded++;
                     
-                    //estimate (sucks, fix for v3.1)
-                    if (g_voices[v].total_samples == (uint32)-1 && info.frame_bytes > 0) {
-                        uint32 estimated_frames = g_voices[v].file_size / info.frame_bytes;
-                        g_voices[v].total_samples = estimated_frames * (uint32)samples * 2;
+                    //fixed estimation (update bytes consumed for decoded frames) :D
+                    g_voices[v].bytes_consumed += (uint32)info.frame_bytes;
+                    if (g_voices[v].bytes_consumed > 0) {
+                        uint64 est = ((uint64)g_voices[v].available_samples * (uint64)g_voices[v].file_size) / g_voices[v].bytes_consumed;
+                        g_voices[v].total_samples = (uint32)est;
                     }
 
                     if (info.channels == 1) {
@@ -505,6 +536,7 @@ int ac97_play(const char* filename) {
         g_voices[slot].mp3_chunk = (uint8*)kmalloc(MP3_CHUNK_READ_SIZE);
         g_voices[slot].mp3_chunk_offset = 0;
         g_voices[slot].mp3_chunk_limit = 0;
+        g_voices[slot].bytes_consumed = 0;
         mp3dec_init(&g_voices[slot].mp3d);
     } else {
         g_voices[slot].format = 0;

@@ -49,23 +49,6 @@ extern KERNEL_MEMORY_MAP g_kmap;
 
 extern uint8 g_video_mode;
 
-typedef struct {
-    char* buf;
-    int* len;
-} pbshPrint;
-
-static pbshPrint g_pbsh_print;
-
-void pbsh_buf_print(char* pbsh_buf, int* pbsh_len, const char* str);
-static void pbsh_bx2_print(const char* text) { pbsh_buf_print(g_pbsh_print.buf, g_pbsh_print.len, text); }
-
-typedef void (*IconAction)(void);
-
-typedef struct {
-    const char* bmp;
-    IconAction action;
-} IconDef;
-
 void init_txt();
 void init_gui();
 void trim_pbsh_buf(char* buf, int* term_len);

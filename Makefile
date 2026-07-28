@@ -113,7 +113,7 @@ OBJECTS=$(ASM_OBJ)/boot.o $(ASM_OBJ)/tables.o $(ASM_OBJ)/interrupts.o $(ASM_OBJ)
         $(OBJ)/ports.o \
         $(OBJ)/string.o $(OBJ)/console.o \
         $(OBJ)/gdt.o $(OBJ)/idt.o $(OBJ)/isr.o $(OBJ)/8259_pic.o \
-        $(OBJ)/keyboard.o $(OBJ)/bae.o \
+        $(OBJ)/keyboard.o $(OBJ)/bae.o $(OBJ)/cmdtree.o \
         $(OBJ)/kernel.o \
         $(OBJ)/graphics.o $(OBJ)/fonts/fuzzy.o $(OBJ)/fonts/kalnia.o $(OBJ)/fonts/fonts.o \
         $(OBJ)/ide.o $(OBJ)/kheap.o $(OBJ)/pmm.o $(OBJ)/bios32.o \
@@ -154,8 +154,8 @@ apps: $(APPS_OBJ) $(patsubst $(SRC)/apps/%.c, $(APPS_OBJ)/%.o, $(wildcard $(SRC)
 	$(MKDIR) $(ISO_DIR)/boot/grub
 	$(CP) $(TARGET) $(ISO_DIR)/boot/
 	$(CP) $(CONFIG)/grub.cfg $(ISO_DIR)/boot/grub/
+	$(CP) $(FAT32_IMG) $(ISO_DIR)/boot/
 	$(GRUB) -o $(TARGET_ISO) $(ISO_DIR)
-	$(RM) $(TARGET)
 	@printf "\n[ finished rebuilding apps ]\n"
 
 apps-clean:
@@ -174,8 +174,8 @@ all: $(OBJECTS) $(OUT)
 	$(MKDIR) $(ISO_DIR)/boot/grub
 	$(CP) $(TARGET) $(ISO_DIR)/boot/
 	$(CP) $(CONFIG)/grub.cfg $(ISO_DIR)/boot/grub/
+	$(CP) $(FAT32_IMG) $(ISO_DIR)/boot/
 	$(GRUB) -o $(TARGET_ISO) $(ISO_DIR)
-	$(RM) $(TARGET)
 	@printf "𝔂𝓸𝓾'𝓻𝓮 𝓼𝓸 𝓑𝓘𝓑𝓞𝓞 𝓣𝓐𝓧\n\n\n"
 	@printf "\n[ BUILD COMPLETE ]\n\n"
 
@@ -270,8 +270,7 @@ vdi:
 	@printf "[ CONVERTING UR IMAGE TO VDI (use in VBox) ]\n"
 	$(RM) fat32.vdi
 	$(VBOXMANAGE) convertfromraw $(FAT32_IMG) fat32.vdi --format VDI
-	@printf ">> assigning hardcoded ID (you can change this in makefile) >>\n"
-	$(VBOXMANAGE) internalcommands sethduuid fat32.vdi "6b438206-696d-496e-6920-636c6920726b"
+	
 	@printf ">> created fat32.vdi successfully! >>\n"
 
 clean: rootfs
@@ -315,6 +314,17 @@ run_win:
 	@printf "𝓲 𝓳𝓾𝓼𝓽 𝔀𝓪𝓷𝓷𝓪 𝓫𝓮 𝔂𝓸𝓾𝓻 𝓢𝓗𝓘𝓞𝓡𝓘 (sing it with me! :D)\n\n"
 	"/mnt/c/Program Files/qemu/qemu-system-x86_64.exe" \
 		-accel whpx,kernel-irqchip=off \
+		-boot d \
+		-cdrom out/kOSeki.iso \
+		-drive file=fat32.img,format=raw \
+		-m 64 \
+		-audiodev dsound,id=snd0 \
+		-device AC97,audiodev=snd0
+
+# for sound while the hardware-accel is still slow to startup :p
+run_win_legacy:
+	@printf "𝓲 𝓳𝓾𝓼𝓽 𝔀𝓪𝓷𝓷𝓪 𝓫𝓮 𝔂𝓸𝓾𝓻 𝓢𝓗𝓘𝓞𝓡𝓘 (sing it with me! :D)\n\n"
+	"/mnt/c/Program Files/qemu/qemu-system-x86_64.exe" \
 		-boot d \
 		-cdrom out/kOSeki.iso \
 		-drive file=fat32.img,format=raw \

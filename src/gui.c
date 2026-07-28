@@ -34,6 +34,8 @@ extern int CLOCK_X, CLOCK_Y;
 extern uint32 *g_back_buffer;
 extern uint32_t timer_ticks;
 
+BOOL g_force_render = FALSE;
+
 static icon_button_t* button_list[MAX_BUTTONS];
 static int button_count = 0;
 
@@ -118,9 +120,8 @@ static void notif();
 BOOL g_screen_dirty = TRUE;
 BOOL g_bg_dirty = TRUE;
 
-static BOOL _kb_combo(BOOL* was_pressed, uint8 key1, uint8 key2) {
-    BOOL pressed = (kb_is_key_pressed(SCAN_CODE_KEY_ALT)
-                && kb_is_key_pressed(key1) && kb_is_key_pressed(key2));
+BOOL _kb_combo(BOOL* was_pressed, uint8 key1, uint8 key2) {
+    BOOL pressed = (kb_is_key_pressed(SCAN_CODE_KEY_ALT) && kb_is_key_pressed(key1) && kb_is_key_pressed(key2));
 
     if (pressed && !*was_pressed) {
         *was_pressed = TRUE;
@@ -160,6 +161,11 @@ static void _toggle_split(void) {
 static BOOL _kb_pixelate(void) {
     static BOOL was_pressed = FALSE;
     return _kb_combo(&was_pressed, SCAN_CODE_KEY_8, SCAN_CODE_KEY_8);
+}
+
+static BOOL _kb_winclose(void) {
+    static BOOL was_pressed = FALSE;
+    return _kb_combo(&was_pressed, SCAN_CODE_KEY_X, SCAN_CODE_KEY_X);
 }
 
 static void _toggle_pixelate(void) {
@@ -1157,6 +1163,10 @@ void m_update() {
 
     if (_kb_split()) _toggle_split();
     if (_kb_pixelate()) _toggle_pixelate();
+    if (_kb_winclose()) {
+        Window* focused = get_active_win();
+        if (focused) close_win(focused->id);
+    }
 
     switchstate(g_mouse_x_pos, g_mouse_y_pos, g_status.left_button);
 }
@@ -1307,7 +1317,7 @@ void redraw_all() {
     BOOL mouse_moved = (g_mouse_x_pos != last_gui_mouse_x || g_mouse_y_pos != last_gui_mouse_y);
     BOOL kronii_refresh = (timer_ticks - last_tick >= 18);
     
-    if (!g_screen_dirty && !mouse_moved && !kronii_refresh) return;
+    if (!g_force_render && !g_screen_dirty && !mouse_moved && !kronii_refresh) return;
 
     if (kronii_refresh) {
         last_tick = timer_ticks;

@@ -1,5 +1,6 @@
 #include "ide.h"
 #include "console.h"
+#include "serial.h"
 #include "ports.h"
 #include "string.h"
 
@@ -13,6 +14,10 @@ IDE_CHANNELS g_ide_channels[MAXIMUM_CHANNELS];
 IDE_DEVICE g_ide_devices[MAXIMUM_IDE_DEVICES];
 
 static volatile unsigned char g_ide_irq_invoked = 0;
+
+uint8 *g_ramdisk_base = 0;
+uint32 g_ramdisk_size = 0;
+uint8 g_using_ramdisk = 0;
 
 static uint8 ide_read_register(uint8 channel, uint8 reg);
 static void ide_write_register(uint8 channel, uint8 reg, uint8 data);
@@ -350,6 +355,39 @@ void ide_init(uint32 prim_channel_base_addr, uint32 prim_channel_control_base_ad
         }
 }
 
+// debug summary
+void ide_get_summary(char *buf, uint32 buf_size) {
+    uint32 offset = 0;
+    int i;
+
+    if (buf_size == 0) return;
+    buf[0] = '\0';
+
+    for (i = 0; i < MAXIMUM_IDE_DEVICES; i++) {
+        if (g_ide_devices[i].reserved != 1) continue;
+
+        // dont overflow buffer
+        if (offset + 80 >= buf_size) break;
+
+        sprintf(buf + offset, "%d:-\n  \nmodel: %s\n  type: %s\n  drive: %u, channel: %u\n",
+        i,
+        g_ide_devices[i].model,
+        (g_ide_devices[i].type == IDE_ATA) ? "ATA" : "ATAPI",
+        g_ide_devices[i].drive,
+        g_ide_devices[i].channel);
+        offset += strlen(buf + offset);
+    }
+
+    if (offset == 0) {
+        const char *msg = "no IDE drives found";
+        uint32 len = strlen(msg);
+        if (len >= buf_size) len = buf_size - 1;
+        for (uint32 k = 0; k < len; k++) buf[k] = msg[k];
+        offset = len;
+        buf[offset] = '\0';
+    }
+}
+
 uint8 ide_ata_access(uint8 direction, uint8 drive, uint32 lba, uint8 num_sectors, void* buffer) {
     uint8 lba_mode /* 0: CHS, 1:LBA28, 2: LBA48 */, dma /* 0: No DMA, 1: DMA */, cmd;
     uint8 lba_io[6];
@@ -494,6 +532,15 @@ void ide_irq() {
 
 // start from lba = 0
 int ide_read_sectors(uint8 drive, uint8 num_sectors, uint32 lba, void* buffer) {
+    // service from ramdisk if active
+    if (g_using_ramdisk) {
+        if ((lba + num_sectors) * ATA_SECTOR_SIZE > g_ramdisk_size) {
+            printf("IDE ERROR: LBA address(0x%x) is greater than the available ramdisk sectors\n", lba);
+            return -2;
+        }
+        memcpy(buffer, g_ramdisk_base + (lba * ATA_SECTOR_SIZE), num_sectors * ATA_SECTOR_SIZE);
+        return 0;
+    }
     // 1: Check if the drive presents:
     if (drive > MAXIMUM_IDE_DEVICES || g_ide_devices[drive].reserved == 0) {
         printf("IDE ERROR: Drive not found\n");
@@ -517,6 +564,15 @@ int ide_read_sectors(uint8 drive, uint8 num_sectors, uint32 lba, void* buffer) {
 
 // start from lba = 0
 int ide_write_sectors(uint8 drive, uint8 num_sectors, uint32 lba, void* buffer) {
+    // prop the same sectors to the physical drive 
+    // (I cant test this fully since I'm loading from GRUB module, but for now the files created within kOSeki will persist for the session)
+    if (g_using_ramdisk) {
+        if ((lba + num_sectors) * ATA_SECTOR_SIZE > g_ramdisk_size) {
+            kprint("[IDE] the LBA address(0x%x) is greater than the available ramdisk sectors\n", lba);
+            return -2;
+        }
+        memcpy(g_ramdisk_base + (lba * ATA_SECTOR_SIZE), buffer, num_sectors * ATA_SECTOR_SIZE);
+    }
     // 1: Check if the drive presents:
     if (drive >= MAXIMUM_IDE_DEVICES || g_ide_devices[drive].reserved == 0) {
         printf("IDE ERROR: Drive not found\n");

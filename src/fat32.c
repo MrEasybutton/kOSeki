@@ -84,24 +84,35 @@ uint32 fat_get_next_clu(uint32 curr_cluster) {
     return (next_cluster >= 0x0FFFFFF8) ? (uint32)-1 : next_cluster;
 }
 
-static void fat_set_entry(uint32 cluster, uint32 value) {
+static int fat_set_entry(uint32 cluster, uint32 value) {
     uint32 fat_index = cluster * 4;
     uint32 fat_index_sector = fat_index / g_bytes_per_sector;
     uint32 fat_ent_offset = fat_index % g_bytes_per_sector;
 
     // read sector with FAT entry
     char* sector_buf = kmalloc(g_bytes_per_sector);
-    ide_read_sectors(DRIVE, 1, g_fat_bpb->reserved_sector_count + fat_index_sector, (uint8*)sector_buf);
+    if (!sector_buf) return -1;
+
+    if (ide_read_sectors(DRIVE, 1, g_fat_bpb->reserved_sector_count + fat_index_sector, (uint8*)sector_buf) != 0) {
+        kfree(sector_buf);
+        return -1;
+    }
 
     *(uint32*)(sector_buf + fat_ent_offset) = value;
 
     //write back to disk
-    ide_write_sectors(DRIVE, 1, g_fat_bpb->reserved_sector_count + fat_index_sector, (uint8*)sector_buf);
+    int wres = ide_write_sectors(DRIVE, 1, g_fat_bpb->reserved_sector_count + fat_index_sector, (uint8*)sector_buf);
 
     kfree(sector_buf);
 
     // invalidate cache
     g_last_fat_sector = (uint32)-1;
+
+    if (wres != 0) {
+        kprint("[FAT32] fat_set_entry: write failed for cluster %d (err %d)\n", cluster, wres);
+        return -1;
+    }
+    return 0;
 }
 
 static uint32 fat_find_free_cluster() {
@@ -409,13 +420,18 @@ static uint32 fat_find_free_slot(uint32 dir_cluster, int* out_offset) {
             uint32 new_clu = fat_find_free_cluster();
             if (new_clu == (uint32)-1) return (uint32)-1;
             
-            fat_set_entry(current_clu, new_clu);
-            fat_set_entry(new_clu, 0x0FFFFFFF);
+            if (fat_set_entry(current_clu, new_clu) != 0 || fat_set_entry(new_clu, 0x0FFFFFFF) != 0)
+                return (uint32)-1;
             
             uint8* empty = kmalloc(cluster_size);
+            if (!empty) return (uint32)-1;
             memset(empty, 0, cluster_size);
-            ide_write_sectors(DRIVE, g_fat_bpb->sectors_per_cluster, FAT_ClusterToLba(new_clu), empty);
+            int wres = ide_write_sectors(DRIVE, g_fat_bpb->sectors_per_cluster, FAT_ClusterToLba(new_clu), empty);
             kfree(empty);
+            if (wres != 0) {
+                kprint("[FAT32] fat_find_free_slot: failed to write new cluster %d (err %d)\n", new_clu, wres);
+                return (uint32)-1;
+            }
             
             *out_offset = 0;
             return new_clu;
@@ -808,13 +824,18 @@ static uint32 fat_find_free_run(uint32 dir_cluster, int count, int* out_offset) 
             uint32 new_clu = fat_find_free_cluster();
             if (new_clu == (uint32)-1) return (uint32)-1;
             
-            fat_set_entry(current_clu, new_clu);
-            fat_set_entry(new_clu, 0x0FFFFFFF);
+            if (fat_set_entry(current_clu, new_clu) != 0 || fat_set_entry(new_clu, 0x0FFFFFFF) != 0)
+                return (uint32)-1;
             
             uint8* empty = kmalloc(cluster_size);
+            if (!empty) return (uint32)-1;
             memset(empty, 0, cluster_size);
-            ide_write_sectors(DRIVE, g_fat_bpb->sectors_per_cluster, FAT_ClusterToLba(new_clu), empty);
+            int wres = ide_write_sectors(DRIVE, g_fat_bpb->sectors_per_cluster, FAT_ClusterToLba(new_clu), empty);
             kfree(empty);
+            if (wres != 0) {
+                kprint("[FAT32] fat_find_free_run: failed to write new cluster %d (err %d)\n", new_clu, wres);
+                return (uint32)-1;
+            }
             
             current_clu = new_clu;
         } else {
@@ -864,8 +885,12 @@ static int fat_create_entry_lfn(uint32 parent_clu, const char* name, const char*
     de->FirstClusterLow = cluster & 0xFFFF;
     de->Size = size;
 
-    ide_write_sectors(DRIVE, g_fat_bpb->sectors_per_cluster, FAT_ClusterToLba(slot_clu), buf);
+    int wres = ide_write_sectors(DRIVE, g_fat_bpb->sectors_per_cluster, FAT_ClusterToLba(slot_clu), buf);
     kfree(buf);
+    if (wres != 0) {
+        kprint("[FAT32] fat_create_entry_lfn: failed to write dir entry (err %d)\n", wres);
+        return -1;
+    }
     return 0;
 }
 
@@ -950,9 +975,13 @@ int fat_create_file(const char* path) {
     memcpy(new_dirent.Name, sfn, 11);
     new_dirent.Attributes = 0x20;
     memcpy(buf + slot_off, &new_dirent, sizeof(FAT_dirent));
-    ide_write_sectors(DRIVE, g_fat_bpb->sectors_per_cluster, FAT_ClusterToLba(slot_clu), buf);
+    int wres = ide_write_sectors(DRIVE, g_fat_bpb->sectors_per_cluster, FAT_ClusterToLba(slot_clu), buf);
     kfree(buf);
 
+    if (wres != 0) {
+        kprint("[FAT32] fat_create_file: failed to write dir entry (err %d)\n", wres);
+        return -1;
+    }
     return 0;
 }
 
@@ -1001,7 +1030,11 @@ static int fat_write_internal(const char* path, uint32 size, void* ctx, int (*fi
     uint32 current = (dirent_copy->FirstClusterHigh << 16) | dirent_copy->FirstClusterLow;
     while (current >= 2 && current < 0x0FFFFFF8) {
         uint32 nxt = fat_get_next_clu(current);
-        fat_set_entry(current, 0);
+        if (fat_set_entry(current, 0) != 0) {
+            kprint("[FAT32] fat_write_internal: failed to free old cluster %d\n", current);
+            kfree(dirent_copy);
+            return -1;
+        }
         current = nxt;
     }
 
@@ -1023,9 +1056,18 @@ static int fat_write_internal(const char* path, uint32 size, void* ctx, int (*fi
             kfree(dirent_copy);
             return -1;
         }
-        fat_set_entry(nc, 0x0FFFFFFF);
-        if (i == 0) first = nc;
-        else fat_set_entry(last, nc);
+        if (fat_set_entry(nc, 0x0FFFFFFF) != 0) {
+            kfree(wbuf);
+            kfree(dirent_copy);
+            return -1;
+        }
+        if (i == 0) {
+            first = nc;
+        } else if (fat_set_entry(last, nc) != 0) {
+            kfree(wbuf);
+            kfree(dirent_copy);
+            return -1;
+        }
         last = nc;
 
         memset(wbuf, 0, cluster_size);
@@ -1039,7 +1081,13 @@ static int fat_write_internal(const char* path, uint32 size, void* ctx, int (*fi
             }
         }
 
-        ide_write_sectors(DRIVE, g_fat_bpb->sectors_per_cluster, FAT_ClusterToLba(nc), wbuf);
+        int wres = ide_write_sectors(DRIVE, g_fat_bpb->sectors_per_cluster, FAT_ClusterToLba(nc), wbuf);
+        if (wres != 0) {
+            kprint("[FAT32] fat_write_internal: failed to write cluster %d (err %d)\n", nc, wres);
+            kfree(wbuf);
+            kfree(dirent_copy);
+            return -1;
+        }
         offset += to_w;
         bytes_remaining -= to_w;
     }
@@ -1048,14 +1096,23 @@ static int fat_write_internal(const char* path, uint32 size, void* ctx, int (*fi
 
     // update dirent
     uint8* final_dir_buf = load_cluster(dirent_clu);
+    if (!final_dir_buf) {
+        kfree(dirent_copy);
+        return -1;
+    }
     FAT_dirent* de = (FAT_dirent*)(final_dir_buf + dirent_off);
     de->Size = original_total_size;
     de->FirstClusterHigh = (first >> 16) & 0xFFFF;
     de->FirstClusterLow = first & 0xFFFF;
-    ide_write_sectors(DRIVE, g_fat_bpb->sectors_per_cluster, FAT_ClusterToLba(dirent_clu), final_dir_buf);
+    int dres = ide_write_sectors(DRIVE, g_fat_bpb->sectors_per_cluster, FAT_ClusterToLba(dirent_clu), final_dir_buf);
     
     kfree(final_dir_buf);
     kfree(dirent_copy);
+
+    if (dres != 0) {
+        kprint("[FAT32] fat_write_internal: failed to write updated dir entry (err %d)\n", dres);
+        return -1;
+    }
     return 0;
 }
 
@@ -1086,10 +1143,11 @@ int fat_create_dir(const char* path) {
 
     uint32 nc = fat_find_free_cluster();
     if (nc == (uint32)-1) return -1;
-    fat_set_entry(nc, 0x0FFFFFFF);
+    if (fat_set_entry(nc, 0x0FFFFFFF) != 0) return -1;
 
     uint32 cluster_size = g_fat_bpb->sectors_per_cluster * g_fat_bpb->bytes_per_sector;
     uint8* buf = kmalloc(cluster_size);
+    if (!buf) return -1;
     memset(buf, 0, cluster_size);
 
     FAT_dirent dot; memset(&dot, 0, sizeof(dot));
@@ -1102,8 +1160,12 @@ int fat_create_dir(const char* path) {
     ddot.FirstClusterHigh = (parent_clu >> 16) & 0xFFFF; ddot.FirstClusterLow = parent_clu & 0xFFFF;
     memcpy(buf + 32, &ddot, 32);
 
-    ide_write_sectors(DRIVE, g_fat_bpb->sectors_per_cluster, FAT_ClusterToLba(nc), buf);
+    int wres = ide_write_sectors(DRIVE, g_fat_bpb->sectors_per_cluster, FAT_ClusterToLba(nc), buf);
     kfree(buf);
+    if (wres != 0) {
+        kprint("[FAT32] fat_create_dir: failed to write new dir cluster %d (err %d)\n", nc, wres);
+        return -1;
+    }
 
 
     char sfn_test[12];
@@ -1125,8 +1187,12 @@ int fat_create_dir(const char* path) {
     new_de.FirstClusterLow = nc & 0xFFFF;
     
     memcpy(dbuf + slot_off, &new_de, sizeof(FAT_dirent));
-    ide_write_sectors(DRIVE, g_fat_bpb->sectors_per_cluster, FAT_ClusterToLba(slot_clu), dbuf);
+    int dwres = ide_write_sectors(DRIVE, g_fat_bpb->sectors_per_cluster, FAT_ClusterToLba(slot_clu), dbuf);
     kfree(dbuf);
+    if (dwres != 0) {
+        kprint("[FAT32] fat_create_dir: failed to write dir entry (err %d)\n", dwres);
+        return -1;
+    }
     return 0;
 }
 
@@ -1151,8 +1217,12 @@ int fat_rename_file(const char* old_path, const char* new_path) {
         for (uint32 off = 0; off < cluster_size; off += 32) {
             if (memcmp(buf + off, (uint8*)old_sfn, 11) == 0) {
                 memcpy(buf + off, new_sfn, 11);
-                ide_write_sectors(DRIVE, g_fat_bpb->sectors_per_cluster, FAT_ClusterToLba(dir_clu), buf);
+                int wres = ide_write_sectors(DRIVE, g_fat_bpb->sectors_per_cluster, FAT_ClusterToLba(dir_clu), buf);
                 kfree(buf);
+                if (wres != 0) {
+                    kprint("[FAT32] fat_rename_file: failed to write dir entry (err %d)\n", wres);
+                    return -1;
+                }
                 return 0;
             }
         }
@@ -1215,13 +1285,21 @@ int fat_delete_file(const char* path) {
                 // free chain
                 while (file_clu >= 2 && file_clu < 0x0FFFFFF8) {
                     uint32 next = fat_get_next_clu(file_clu);
-                    fat_set_entry(file_clu, 0);
+                    if (fat_set_entry(file_clu, 0) != 0) {
+                        kprint("[FAT32] fat_delete_file: failed to free cluster %d\n", file_clu);
+                        kfree(buf);
+                        return -1;
+                    }
                     file_clu = next;
                 }
 
                 buf[off] = 0xE5;
-                ide_write_sectors(DRIVE, g_fat_bpb->sectors_per_cluster, FAT_ClusterToLba(dir_clu), buf);
+                int wres = ide_write_sectors(DRIVE, g_fat_bpb->sectors_per_cluster, FAT_ClusterToLba(dir_clu), buf);
                 kfree(buf);
+                if (wres != 0) {
+                    kprint("[FAT32] fat_delete_file: failed to write dir entry (err %d)\n", wres);
+                    return -1;
+                }
                 return 0;
             }
         }

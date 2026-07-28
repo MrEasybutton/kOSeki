@@ -23,6 +23,10 @@ As my naive self from a year ago stated:
 In this update, kOSeki has acquired fully revamped graphics and robust backend upgrades such as a proper heap allocator, improved rendering pipeline, and more.
 In other words, pretty beepin massive glow-up. (am i speaking too chuuni?)
 
+As of v3.0.2, kOSeki is also able to run on actual hardware! Here's some photos of it booting on my Dell Latitude D630:
+![all ur devices are belong to biboo](images_readme/rockhard.png)
+![all ur devices are belong to biboo 2](images_readme/rockhard2.png)
+
 ## **what's new**
 
 - robust VBE 118h GUI (16M colours), with double-buffering, render caches, dirty-rects
@@ -65,6 +69,7 @@ Like typical operating systems, kOSeki has a dedicated rock hard command shell f
 * `help` - view all commands
 * `beep` - echo text to Pebbleshell
 * `ls` - list root directory
+* `geowfetch` - see system and device info
 * `johncat` - read a file
 * `rock` - create a file
 * `stone` - create a folder
@@ -78,6 +83,10 @@ Like typical operating systems, kOSeki has a dedicated rock hard command shell f
 * `synth` - play a synth
 * `br` - play with the BloodRaven opera synth
 * `{app name}` - launch an app by typing its name
+
+The `geowfetch` command works just like neofetch/fastfetch and will display actual RAM, disk and CPU info, with a cute ASCII Pebble on the side :D
+
+![whatdowedowithabrainrottedbiboo](images_readme/geowfetch.png)
 
 > There is a limitation in kOSeki which is that it does not support mouse scrolling. This is because the PS/2 mouse originally uses 3-byte mouse packets, so no field for the scroll wheel. You can still scroll using the scrollbar thumb, which will be there in every app that has scrollable content (pbsh, casefiles, novella, CL media, Reaper). sorry!! 
 

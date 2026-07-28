@@ -3,7 +3,7 @@
 
 #include "types.h"
 
-#define PCI_CONFIG_ADDRESS 0xCF8
+#define PCI_CONFIG_ADDR 0xCF8
 #define PCI_CONFIG_DATA 0xCFC
 
 #define PCI_BAR_TYPE_MEM 0

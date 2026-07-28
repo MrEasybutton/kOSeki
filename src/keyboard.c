@@ -1,5 +1,6 @@
 #include "keyboard.h"
 #include "video.h"
+#include "8259_pic.h"
 #include "kernel.h"
 #include "console.h"
 #include "idt.h"
@@ -191,6 +192,7 @@ void keyboard_handler(REGISTERS *r) {
 
 void keyboard_init() {
     register_interrupt_handler(IRQ_BASE + 1, keyboard_handler);
+    pic8259_unmask(1);
 }
 
 //blocking

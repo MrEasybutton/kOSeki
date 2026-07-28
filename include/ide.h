@@ -123,9 +123,16 @@ int ide_read_sectors(uint8 drive, uint8 num_sectors, uint32 lba, void* buffer);
 // start from lba = 0
 int ide_write_sectors(uint8 drive, uint8 num_sectors, uint32 lba, void* buffer);
 
+void ide_get_summary(char *buf, uint32 buf_size);
 void ata_init();
 int ata_get_drive_by_model(const char *model);
 
 extern IDE_DEVICE g_ide_devices[MAXIMUM_IDE_DEVICES];
+
+// multiboot ramdisk backend (see ide.c)
+// set b4 fat_init so it will read from GRUB module and not ATA
+extern uint8 *g_ramdisk_base;
+extern uint32 g_ramdisk_size;
+extern uint8 g_using_ramdisk;
 
 #endif

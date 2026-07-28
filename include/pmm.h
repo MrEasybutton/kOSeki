@@ -7,6 +7,32 @@ typedef uint32 PMM_PHYSICAL_ADDRESS;
 
 #define PMM_BLOCK_SIZE 4096
 
+inline void cpu_cpuid(int CPUInfo[4], int InfoType) {
+#if defined(__PIC__)
+    __asm__ __volatile__(
+#if defined(__x86_64__)
+        "push %%rbx\n"
+        "cpuid\n"
+        "xchg %%rbx, %1\n"
+        "pop %%rbx\n"
+        : "=a" (CPUInfo[0]), "=r" (CPUInfo[1]), "=c" (CPUInfo[2]), "=d" (CPUInfo[3])
+        : "a" (InfoType)
+#else
+        "xchgl %%ebx, %1\n"
+        "cpuid\n"
+        "xchgl %%ebx, %1\n"
+        : "=a" (CPUInfo[0]), "=r" (CPUInfo[1]), "=c" (CPUInfo[2]), "=d" (CPUInfo[3])
+        : "a" (InfoType)
+#endif
+    );
+#else
+    __asm__ __volatile__(
+        "cpuid"
+        : "=a" (CPUInfo[0]), "=b" (CPUInfo[1]), "=c" (CPUInfo[2]), "=d" (CPUInfo[3])
+        : "a" (InfoType)
+    );
+#endif
+}
 
 typedef struct {
     uint32 memory_size;
