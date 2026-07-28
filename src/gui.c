@@ -34,6 +34,8 @@ extern int CLOCK_X, CLOCK_Y;
 extern uint32 *g_back_buffer;
 extern uint32_t timer_ticks;
 
+BOOL g_force_render = FALSE;
+
 static icon_button_t* button_list[MAX_BUTTONS];
 static int button_count = 0;
 
@@ -1315,7 +1317,7 @@ void redraw_all() {
     BOOL mouse_moved = (g_mouse_x_pos != last_gui_mouse_x || g_mouse_y_pos != last_gui_mouse_y);
     BOOL kronii_refresh = (timer_ticks - last_tick >= 18);
     
-    if (!g_screen_dirty && !mouse_moved && !kronii_refresh) return;
+    if (!g_force_render && !g_screen_dirty && !mouse_moved && !kronii_refresh) return;
 
     if (kronii_refresh) {
         last_tick = timer_ticks;

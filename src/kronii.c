@@ -92,6 +92,15 @@ void draw_clock(time_t* t, int clock_x, int clock_y) {
 
 void timer_handler(REGISTERS* r) {
     timer_ticks++; is_dirty(TRUE);
+    /* debug for hardware (idk why this won't show up, will ignore for now aaaaa)
+    if (timer_ticks % 67 == 0) {
+        char buffer[12];
+        snprintf(buffer, sizeof(buffer), "%u", timer_ticks);
+        const char* str = buffer;
+        rect(SCREEN_WIDTH - 50, SCREEN_HEIGHT - 50, 60, 60, RGB(42, 20, 88));
+        text(buffer, SCREEN_WIDTH - 40, SCREEN_HEIGHT - 40, RGB(225, 120, 250), FONT_KALNIA, TRUE);
+    }
+    */
 }
 
 void timer_init(uint32 frequency) {
