@@ -1,9 +1,6 @@
 [bits 32]
 
-%define REBASE_ADDRESS(x) (0x7c00 + ((x) - BIOS32_START))
-
-extern g_idt_ptr
-extern g_gdt_ptr
+%define REBASE_ADDRESS(x)  (0x7c00 + ((x) - BIOS32_START))
 
 ; switch to real mode for bios interrupt and back to pmode
 
@@ -122,14 +119,13 @@ bios32_int_number_ptr:
     jmp 0x08:REBASE_ADDRESS(__protected_mode_32)
 
 __protected_mode_32:use32
-    lidt [g_idt_ptr]
     mov ax, 0x10
     mov ds, ax
     mov es, ax
     mov fs, ax
     mov gs, ax
     mov ss, ax
-    lgdt [g_gdt_ptr]
+    
     mov cr3, ebx
     mov esp, edx
     popa
