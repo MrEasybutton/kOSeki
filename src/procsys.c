@@ -174,7 +174,7 @@ void cleanup_process(int pid) {
         return;
     }
 
-    kprint("Begin cleanup for process (PID: %d\n)", pid);
+    kprint("Begin cleanup for process (PID: %d)\n", pid);
     
     Process* p = processes[pid];
     

@@ -1312,7 +1312,7 @@ void redraw_all() {
     static int last_gui_mouse_x = -1;
     static int last_gui_mouse_y = -1;
     static uint32 last_tick = 0;
-    extern int cursor_width, cursor_height;
+    extern int m_width, m_height;
 
     BOOL mouse_moved = (g_mouse_x_pos != last_gui_mouse_x || g_mouse_y_pos != last_gui_mouse_y);
     BOOL kronii_refresh = (timer_ticks - last_tick >= 18);
@@ -1373,8 +1373,8 @@ void redraw_all() {
         draw_all_win();
         
         // capture area below the new mouse
-        int mw = (cursor_width > 0) ? cursor_width : 32; 
-        int mh = (cursor_height > 0) ? cursor_height : 32;
+        int mw = (m_width > 0) ? m_width : 32; 
+        int mh = (m_height > 0) ? m_height : 32;
         _save_mouse_bg(g_mouse_x_pos, g_mouse_y_pos, mw, mh);
 
         extern void m_render(int x, int y);
@@ -1383,8 +1383,8 @@ void redraw_all() {
         swapbuf();
         g_screen_dirty = FALSE;
     } else if (mouse_moved) {
-        int mw = (cursor_width > 0) ? cursor_width : 32; 
-        int mh = (cursor_height > 0) ? cursor_height : 32;
+        int mw = (m_width > 0) ? m_width : 32; 
+        int mh = (m_height > 0) ? m_height : 32;
         _save_mouse_bg(g_mouse_x_pos, g_mouse_y_pos, mw, mh);
 
         extern void m_render(int x, int y);

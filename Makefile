@@ -343,3 +343,16 @@ debug:
 		-netdev user,id=u1,hostfwd=udp::1234-:1234 \
 		-device e1000,netdev=u1 \
 		-serial file:serial.log \
+
+# debug the keybaord issue, was reproduced by mouse exiting QEMU window
+run_win_debug:
+	@printf "𝓲 𝓳𝓾𝓼𝓽 𝔀𝓪𝓷𝓷𝓪 𝓫𝓮 𝔂𝓸𝓾𝓻 𝓢𝓗𝓘𝓞𝓡𝓘 (sing it with me! :D)\n\n"
+	"/mnt/c/Program Files/qemu/qemu-system-x86_64.exe" \
+		-accel whpx,kernel-irqchip=off \
+		-boot d \
+		-cdrom out/kOSeki.iso \
+		-drive file=fat32.img,format=raw \
+		-m 64 \
+		-audiodev dsound,id=snd0 \
+		-device AC97,audiodev=snd0 \
+		-serial file:serial.log \

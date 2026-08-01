@@ -111,7 +111,7 @@ void pci_check_device(uint8 bus, uint8 device) {
         uint8 class_code = (uint8)((class_rev >> 24) & 0xFF);
         uint8 subclass = (uint8)((class_rev >> 16) & 0xFF);
 
-        kprint("PCI: BUS %d DEV %d FUNC %d - V: %x D: %x C: %x S: %x\n",
+        kprint("[PCI] BUS %d DEV %d FUNC %d - V: %x D: %x C: %x S: %x\n",
                       bus, device, function, vendor_id, device_id, class_code, subclass);
         
         if (class_code == 0x04) {
@@ -138,11 +138,11 @@ void pci_check_device(uint8 bus, uint8 device) {
 void pci_init() {
     extern void splash();
     splash("init PCI");
-    kprint("PCI: Starting enum...\n");
+    kprint("[PCI] Starting enum...\n");
     for (uint16 bus = 0; bus < 256; bus++) {
         for (uint8 device = 0; device < 32; device++) {
             pci_check_device((uint8)bus, device);
         }
     }
-    kprint("PCI: Enum is complete.\n");
+    kprint("[PCI] Enum is complete.\n");
 }

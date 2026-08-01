@@ -273,7 +273,7 @@ void ac97_init(uint8 bus, uint8 slot, uint8 func, uint8 irq) {
     g_bm_base = pci_get_bar(bus, slot, func, 1).base_address;
     
     if (g_mixer_base == 0 || g_bm_base == 0) {
-        kprint("AC97: Error - BARs not assigned!\n");
+        kprint("[AC97] Error - BARs not assigned!\n");
         return;
     }
 
@@ -319,7 +319,7 @@ void ac97_init(uint8 bus, uint8 slot, uint8 func, uint8 irq) {
         }
     }
 
-    kprint("AC97: init with mixer, IRQ %d\n", irq);
+    kprint("[AC97] init with mixer, IRQ %d\n", irq);
 }
 
 #define MP3_CHUNK_READ_SIZE 16384

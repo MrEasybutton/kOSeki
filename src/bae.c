@@ -20,10 +20,15 @@
 int g_mouse_x_pos, g_mouse_y_pos;
 MOUSE_STATUS g_status;
 
+#define PS2_STATUS_OUTPUT_FULL (1 << 0)
+#define PS2_STATUS_AUX_DATA (1 << 5)
+#define PS2_KEYBOARD_DISABLE 0xAD
+#define PS2_KEYBOARD_ENABLE 0xAE
+
 int g_mouse_sensitivity = 100;
 
-int cursor_width, cursor_height, cursor_row_padded;
-static char *cursor_bmp_data, *cursor_pixel_data;
+int m_width, m_height, m_row_padded;
+static char *m_bmp_data, *m_pixel_data;
 
 int mouse_getx(void) { return g_mouse_x_pos; }
 int mouse_gety(void) { return g_mouse_y_pos; }
@@ -33,7 +38,7 @@ void mouse_wait(BOOL write) {
     uint32 t = 1000000;
     while (t--) {
         uint8 s = inportb(PS2_CMD_PORT);
-        if (!write && (s & 1)) return;
+        if (!write && (s & PS2_STATUS_OUTPUT_FULL) && (s & PS2_STATUS_AUX_DATA)) return;
         if ( write && !(s & 2)) return;
     }
 }
@@ -48,6 +53,13 @@ void mouse_write(uint8 data) {
 uint8 mouse_read(void) {
     mouse_wait(FALSE);
     return inportb(MOUSE_DATA_PORT);
+}
+
+static void PS2_flush_out(void) {
+    for (uint32 count = 0; count < 10000; count++) {
+        if (!(inportb(PS2_CMD_PORT) & PS2_STATUS_OUTPUT_FULL)) break;
+        (void)inportb(MOUSE_DATA_PORT);
+    }
 }
 
 static BOOL mouse_write_n_ack(uint8 cmd) {
@@ -71,7 +83,7 @@ void get_mouse_status(char b, MOUSE_STATUS *s) {
 }
 
 void m_render(int x, int y) {
-    if (!cursor_pixel_data || cursor_width <= 0 || cursor_height <= 0)
+    if (!m_pixel_data || m_width <= 0 || m_height <= 0)
         return;
 
     int shadow_offset = 1;
@@ -79,10 +91,10 @@ void m_render(int x, int y) {
 
     if (!sneaky_bae) {
         // i just love Latinas, Sonic
-        for (int sy = 0; sy < cursor_height; sy++) {
-            char *row = cursor_pixel_data + (cursor_height - 1 - sy) * cursor_row_padded;
+        for (int sy = 0; sy < m_height; sy++) {
+            char *row = m_pixel_data + (m_height - 1 - sy) * m_row_padded;
 
-            for (int sx = 0; sx < cursor_width; sx++) {
+            for (int sx = 0; sx < m_width; sx++) {
                 uint8 b = row[sx * 3 + 0];
                 uint8 g = row[sx * 3 + 1];
                 uint8 r = row[sx * 3 + 2];
@@ -95,10 +107,10 @@ void m_render(int x, int y) {
             }
         }
 
-        for (int sy = 0; sy < cursor_height; sy++) {
-            char *row = cursor_pixel_data + (cursor_height - 1 - sy) * cursor_row_padded;
+        for (int sy = 0; sy < m_height; sy++) {
+            char *row = m_pixel_data + (m_height - 1 - sy) * m_row_padded;
 
-            for (int sx = 0; sx < cursor_width; sx++) {
+            for (int sx = 0; sx < m_width; sx++) {
                 uint8 b = row[sx * 3 + 0];
                 uint8 g = row[sx * 3 + 1];
                 uint8 r = row[sx * 3 + 2];
@@ -115,58 +127,48 @@ void m_render(int x, int y) {
 }
 
 void mouse_handler(REGISTERS *r) {
-    static uint8 cycle;
-    static char b[3];
+    static uint8 cycle = 0;
+    static uint8 b[3];
     static int dbg = 0;
     if (dbg < 3) { kprint("[bae] mouse irq fired\n"); dbg++; }
-    
-    if (cycle < 2) {
-        b[cycle] = mouse_read();
-        if (cycle == 0) get_mouse_status(b[0], &g_status);
 
-        cycle++;
-    } 
-    else {
-        b[2] = mouse_read();
+    while (inportb(PS2_CMD_PORT) & PS2_STATUS_OUTPUT_FULL) {
+        uint8 status = inportb(PS2_CMD_PORT);
+        if (!(status & PS2_STATUS_AUX_DATA)) break;
 
-        int w = cursor_width + 1;
-        int h = cursor_height + 1;
+        uint8 data = inportb(MOUSE_DATA_PORT);
+        if (cycle == 0 && !(data & 0x08)) continue;
 
-        int sens = g_mouse_sensitivity;
-        if (sens < 1) sens = 1;
-        int dx = ((sint8)b[1] * sens) / 100;
-        int dy = ((sint8)b[2] * sens) / 100;
+        b[cycle++] = data;
+        if (cycle == 3) {
+            get_mouse_status(b[0], &g_status);
 
-        g_mouse_x_pos += dx;
-        g_mouse_y_pos -= dy;
+            int w = m_width + 1;
+            int h = m_height + 1;
+            int sens = g_mouse_sensitivity;
+            if (sens < 1) sens = 1;
 
-        if (g_mouse_x_pos < 0) g_mouse_x_pos = 0;
-        if (g_mouse_y_pos < 0) g_mouse_y_pos = 0;
+            g_mouse_x_pos += ((sint8)b[1] * sens) / 100;
+            g_mouse_y_pos -= ((sint8)b[2] * sens) / 100;
 
-        if (g_mouse_x_pos > (int)SCREEN_WIDTH - w)
-            g_mouse_x_pos = SCREEN_WIDTH - w;
+            if (g_mouse_x_pos < 0) g_mouse_x_pos = 0;
+            if (g_mouse_y_pos < 0) g_mouse_y_pos = 0;
+            if (g_mouse_x_pos > (int)SCREEN_WIDTH - w) g_mouse_x_pos = SCREEN_WIDTH - w;
+            if (g_mouse_y_pos > (int)SCREEN_HEIGHT - h) g_mouse_y_pos = SCREEN_HEIGHT - h;
 
-        if (g_mouse_y_pos > (int)SCREEN_HEIGHT - h)
-            g_mouse_y_pos = SCREEN_HEIGHT - h;
-
-        cycle = 0;
+            cycle = 0;
+        }
     }
 
-    end_interrupt(IRQ_BASE + 12);
 }
 
 
 void set_mouse_rate(uint8 rate) {
-    uint8 s;
-    outportb(MOUSE_DATA_PORT, MOUSE_CMD_SAMPLE_RATE);
-    
-    if ((s = mouse_read()) != MOUSE_ACKNOWLEDGE) {
+    if (!mouse_write_n_ack(MOUSE_CMD_SAMPLE_RATE)) {
         kprint("[bae] failed to send mouse sample rate command\n");
         return;
     }
-    outportb(MOUSE_DATA_PORT, rate);
-    if ((s = mouse_read()) != MOUSE_ACKNOWLEDGE)
-        kprint("[bae] failed to send mouse sample rate data\n");
+    if (!mouse_write_n_ack(rate)) kprint("[bae] failed to send mouse sample rate data\n");
 }
 
 void mouse_init(void) {
@@ -174,26 +176,31 @@ void mouse_init(void) {
     splash("init bae...");
     uint8 s;
 
+    // block input until bae resolves so it wont enter the buffer, also flush output
+    mouse_wait(TRUE);
+    outportb(PS2_CMD_PORT, PS2_KEYBOARD_DISABLE);
+    PS2_flush_out();
+
     g_mouse_x_pos = SCREEN_WIDTH / 2;
     g_mouse_y_pos = SCREEN_HEIGHT / 2;
 
-    cursor_bmp_data = fat_read_file("/SYSTEM/mausgem.bmp");
-    if (cursor_bmp_data) {
-        BMP_FILE_H *fh = (BMP_FILE_H *)cursor_bmp_data;
-        BMP_INFO_H *ih = (BMP_INFO_H *)(cursor_bmp_data + sizeof(*fh));
+    m_bmp_data = fat_read_file("/SYSTEM/mausgem.bmp");
+    if (m_bmp_data) {
+        BMP_FILE_H *fh = (BMP_FILE_H *)m_bmp_data;
+        BMP_INFO_H *ih = (BMP_INFO_H *)(m_bmp_data + sizeof(*fh));
 
         if (fh->type == 0x4D42 && ih->bpp == 24 && ih->width > 0 && ih->height > 0) {
-            cursor_width = ih->width;
-            cursor_height = ih->height;
-            cursor_row_padded = (cursor_width * 3 + 3) & ~3;
+            m_width = ih->width;
+            m_height = ih->height;
+            m_row_padded = (m_width * 3 + 3) & ~3;
             
-            uint32 image_size = cursor_row_padded * cursor_height;
-            cursor_pixel_data = (char*)kmalloc(image_size);
-            memcpy(cursor_pixel_data, cursor_bmp_data + fh->offset, image_size);
-            kfree(cursor_bmp_data);
+            uint32 image_size = m_row_padded * m_height;
+            m_pixel_data = (char*)kmalloc(image_size);
+            memcpy(m_pixel_data, m_bmp_data + fh->offset, image_size);
+            kfree(m_bmp_data);
         } else {
-            kfree(cursor_bmp_data);
-            cursor_bmp_data = cursor_pixel_data = NULL;
+            kfree(m_bmp_data);
+            m_bmp_data = m_pixel_data = NULL;
         }
     }
 
@@ -218,15 +225,21 @@ void mouse_init(void) {
 
     if (!mouse_write_n_ack(MOUSE_CMD_SET_DEFAULTS)) {
         kprint("[bae] failed to ack set_defaults\n");
+        mouse_wait(TRUE);
+        outportb(PS2_CMD_PORT, PS2_KEYBOARD_ENABLE);
         return;
     }
 
     if (!mouse_write_n_ack(MOUSE_CMD_ENABLE_PACKET_STREAMING)) {
         kprint("[bae] failed to ack enable_packet_sstreaming\n");
+        mouse_wait(TRUE);
+        outportb(PS2_CMD_PORT, PS2_KEYBOARD_ENABLE);
         return;
     }
 
     register_interrupt_handler(IRQ_BASE + 12, mouse_handler);
     pic8259_unmask(12);
+    mouse_wait(TRUE);
+    outportb(PS2_CMD_PORT, PS2_KEYBOARD_ENABLE);
     kprint("[bae] mouse init complete! (irq12 registered)\n");
 }

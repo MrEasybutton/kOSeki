@@ -110,6 +110,7 @@
 #define KEY_LSHIFT 0x87
 
 void keyboard_init();
+void keyboard_is_ready(BOOL ready);
 
 unsigned char kb_getchar();
 unsigned char kb_get_scancode();

@@ -1,0 +1,173 @@
+[KHEAP] build ts: Aug  1 2026 13:45:12
+[KHEAP] Initializing heap from 0x540000 to 0x3de0000
+[KHEAP] Initializing heap from 0x540000 to 0x3de0000 (56 MB)
+procsys init done
+
+searching for mode 1024x768@32bpp
+selected mode: 0x144
+[FAT: find] Searching for path: '/'
+[FAT: find] Found root directory.
+
+testapp.pebble
+TOWN    RYS
+hana.pebble
+hello.txt
+prism-lyrics.txt
+rockin.txt
+biboo256.bmp
+rockin.mp3
+SYSTEM     
+TEST    BX2
+pebl.bmp
+DUET    RYS
+LOOPS   BX2
+JDON.pebble
+prism.mp3
+BIBOO   WAH
+End of directory.
+
+searching for mode 1024x768@32bpp
+selected mode: 0x144
+
+searching for mode 1024x768@32bpp
+selected mode: 0x144
+[FAT: read] Reading file: 'SYSTEM/exit-ic.bmp'
+[FAT: find] Searching for path: 'SYSTEM/exit-ic.bmp'
+[FAT: find_in_dir] fname='SYSTEM', cluster=2
+[FAT: find_in_dir] fname='exit-ic.bmp', cluster=643
+[FAT: find] Returning dirent for 'SYSTEM/exit-ic.bmp'
+[FAT: read] 'SYSTEM/exit-ic.bmp' (cluster: 2434, size: 1782)
+[FAT: read] Finished reading 'SYSTEM/exit-ic.bmp'.
+[FAT: read] Reading file: 'SYSTEM/bliss-wllp.bmp'
+[FAT: find] Searching for path: 'SYSTEM/bliss-wllp.bmp'
+[FAT: find_in_dir] fname='SYSTEM', cluster=2
+[FAT: find_in_dir] fname='bliss-wllp.bmp', cluster=643
+[FAT: find] Returning dirent for 'SYSTEM/bliss-wllp.bmp'
+[FAT: read] 'SYSTEM/bliss-wllp.bmp' (cluster: 1069, size: 614454)
+[FAT: read] Finished reading 'SYSTEM/bliss-wllp.bmp'.
+built wallpaper cache: 1024x768
+
+searching for mode 1024x768@32bpp
+selected mode: 0x144
+
+searching for mode 1024x768@32bpp
+selected mode: 0x144
+[PCI] Starting enum...
+[PCI] BUS 0 DEV 0 FUNC 0 - V: 8086 D: 1237 C: 6 S: 0
+[PCI] BUS 0 DEV 1 FUNC 0 - V: 8086 D: 7000 C: 6 S: 1
+[PCI] BUS 0 DEV 1 FUNC 1 - V: 8086 D: 7010 C: 1 S: 1
+[PCI] BUS 0 DEV 1 FUNC 3 - V: 8086 D: 7113 C: 6 S: 80
+[PCI] BUS 0 DEV 2 FUNC 0 - V: 1234 D: 1111 C: 3 S: 0
+[PCI] BUS 0 DEV 3 FUNC 0 - V: 8086 D: 100e C: 2 S: 0
+FOUND NETWORK CONTROLLER
+Intel e1000 detected.
+[E1000] Initializing at 00:03.0
+[E1000] MMIO Base: 0xfebc0000, Size: 131072 bytes
+[E1000] MAC Address: 52:54:00:12:34:56
+lwIP initialized.
+[UDP] registered handler for port 1234
+[E1000] Using IRQ 11
+[E1000] status: 0x80080783 (Link UP)
+[PCI] BUS 0 DEV 4 FUNC 0 - V: 8086 D: 2415 C: 4 S: 1
+FOUND AUDIO CONTROLLER (C: 4, S: 1, IRQ: 11)
+[AC97] init with mixer, IRQ 11
+[PCI] Enum is complete.
+FETCH: Resolving 10.0.2.2...
+[DNS] 10.0.2.2 resolved to ...
+[FAT: find] Searching for path: '/SYSTEM/startup.wav'
+[FAT: find_in_dir] fname='SYSTEM', cluster=2
+[FAT: find_in_dir] fname='startup.wav', cluster=643
+[FAT: find] Returning dirent for '/SYSTEM/startup.wav'
+
+searching for mode 1024x768@32bpp
+selected mode: 0x144
+[FAT: read] Reading file: '/SYSTEM/mausgem.bmp'
+[FAT: find] Searching for path: '/SYSTEM/mausgem.bmp'
+[FAT: find_in_dir] fname='SYSTEM', cluster=2
+[FAT: find_in_dir] fname='mausgem.bmp', cluster=643
+[FAT: find] Returning dirent for '/SYSTEM/mausgem.bmp'
+[FAT: read] '/SYSTEM/mausgem.bmp' (cluster: 1372, size: 1782)
+[FAT: read] Finished reading '/SYSTEM/mausgem.bmp'.
+[bae] mouse init complete! (irq12 registered)
+[FAT: read] Reading file: 'SYSTEM/prf-ic.bmp'
+[FAT: find] Searching for path: 'SYSTEM/prf-ic.bmp'
+[FAT: find_in_dir] fname='SYSTEM', cluster=2
+[FAT: find_in_dir] fname='prf-ic.bmp', cluster=643
+[FAT: find] Returning dirent for 'SYSTEM/prf-ic.bmp'
+[FAT: read] 'SYSTEM/prf-ic.bmp' (cluster: 1375, size: 1782)
+[FAT: read] Finished reading 'SYSTEM/prf-ic.bmp'.
+[FAT: read] Reading file: 'SYSTEM/peb-ic.bmp'
+[FAT: find] Searching for path: 'SYSTEM/peb-ic.bmp'
+[FAT: find_in_dir] fname='SYSTEM', cluster=2
+[FAT: find_in_dir] fname='peb-ic.bmp', cluster=643
+[FAT: find] Returning dirent for 'SYSTEM/peb-ic.bmp'
+[FAT: read] 'SYSTEM/peb-ic.bmp' (cluster: 1374, size: 1782)
+[FAT: read] Finished reading 'SYSTEM/peb-ic.bmp'.
+[FAT: read] Reading file: 'SYSTEM/iry-ic.bmp'
+[FAT: find] Searching for path: 'SYSTEM/iry-ic.bmp'
+[FAT: find_in_dir] fname='SYSTEM', cluster=2
+[FAT: find_in_dir] fname='iry-ic.bmp', cluster=643
+[FAT: find] Returning dirent for 'SYSTEM/iry-ic.bmp'
+[FAT: read] 'SYSTEM/iry-ic.bmp' (cluster: 2433, size: 1782)
+[FAT: read] Finished reading 'SYSTEM/iry-ic.bmp'.
+[FAT: read] Reading file: 'SYSTEM/ame-ic.bmp'
+[FAT: find] Searching for path: 'SYSTEM/ame-ic.bmp'
+[FAT: find_in_dir] fname='SYSTEM', cluster=2
+[FAT: find_in_dir] fname='ame-ic.bmp', cluster=643
+[FAT: find] Returning dirent for 'SYSTEM/ame-ic.bmp'
+[FAT: read] 'SYSTEM/ame-ic.bmp' (cluster: 1068, size: 1782)
+[FAT: read] Finished reading 'SYSTEM/ame-ic.bmp'.
+[FAT: read] Reading file: 'SYSTEM/nov-ic.bmp'
+[FAT: find] Searching for path: 'SYSTEM/nov-ic.bmp'
+[FAT: find_in_dir] fname='SYSTEM', cluster=2
+[FAT: find_in_dir] fname='nov-ic.bmp', cluster=643
+[FAT: find] Returning dirent for 'SYSTEM/nov-ic.bmp'
+[FAT: read] 'SYSTEM/nov-ic.bmp' (cluster: 2437, size: 1782)
+[FAT: read] Finished reading 'SYSTEM/nov-ic.bmp'.
+[FAT: read] Reading file: 'SYSTEM/wah-ic.bmp'
+[FAT: find] Searching for path: 'SYSTEM/wah-ic.bmp'
+[FAT: find_in_dir] fname='SYSTEM', cluster=2
+[FAT: find_in_dir] fname='wah-ic.bmp', cluster=643
+[FAT: find] Returning dirent for 'SYSTEM/wah-ic.bmp'
+[FAT: read] 'SYSTEM/wah-ic.bmp' (cluster: 1680, size: 1782)
+[FAT: read] Finished reading 'SYSTEM/wah-ic.bmp'.
+[FAT: read] Reading file: 'SYSTEM/ggq-ic.bmp'
+[FAT: find] Searching for path: 'SYSTEM/ggq-ic.bmp'
+[FAT: find_in_dir] fname='SYSTEM', cluster=2
+[FAT: find_in_dir] fname='ggq-ic.bmp', cluster=643
+[FAT: find] Returning dirent for 'SYSTEM/ggq-ic.bmp'
+[FAT: read] 'SYSTEM/ggq-ic.bmp' (cluster: 1371, size: 1782)
+[FAT: read] Finished reading 'SYSTEM/ggq-ic.bmp'.
+[FAT: read] Reading file: 'SYSTEM/rao-ic.bmp'
+[FAT: find] Searching for path: 'SYSTEM/rao-ic.bmp'
+[FAT: find_in_dir] fname='SYSTEM', cluster=2
+[FAT: find_in_dir] fname='rao-ic.bmp', cluster=643
+[FAT: find] Returning dirent for 'SYSTEM/rao-ic.bmp'
+[FAT: read] 'SYSTEM/rao-ic.bmp' (cluster: 663, size: 1782)
+[FAT: read] Finished reading 'SYSTEM/rao-ic.bmp'.
+[FAT: read] Reading file: 'SYSTEM/mor-ic.bmp'
+[FAT: find] Searching for path: 'SYSTEM/mor-ic.bmp'
+[FAT: find_in_dir] fname='SYSTEM', cluster=2
+[FAT: find_in_dir] fname='mor-ic.bmp', cluster=643
+[FAT: find] Returning dirent for 'SYSTEM/mor-ic.bmp'
+[FAT: read] 'SYSTEM/mor-ic.bmp' (cluster: 1373, size: 1782)
+[FAT: read] Finished reading 'SYSTEM/mor-ic.bmp'.
+[FAT: read] Reading file: 'SYSTEM/gur-ic.bmp'
+[FAT: find] Searching for path: 'SYSTEM/gur-ic.bmp'
+[FAT: find_in_dir] fname='SYSTEM', cluster=2
+[FAT: find_in_dir] fname='gur-ic.bmp', cluster=643
+[FAT: find] Returning dirent for 'SYSTEM/gur-ic.bmp'
+[FAT: read] 'SYSTEM/gur-ic.bmp' (cluster: 2438, size: 1782)
+[FAT: read] Finished reading 'SYSTEM/gur-ic.bmp'.
+[FAT: read] Reading file: 'SYSTEM/bae-ic.bmp'
+[FAT: find] Searching for path: 'SYSTEM/bae-ic.bmp'
+[FAT: find_in_dir] fname='SYSTEM', cluster=2
+[FAT: find_in_dir] fname='bae-ic.bmp', cluster=643
+[FAT: find] Returning dirent for 'SYSTEM/bae-ic.bmp'
+[FAT: read] 'SYSTEM/bae-ic.bmp' (cluster: 1681, size: 1782)
+[FAT: read] Finished reading 'SYSTEM/bae-ic.bmp'.
+[bae] mouse irq fired
+[bae] mouse irq fired
+[bae] mouse irq fired
+[CMD] received: 'geowfetch'
+[CMD] received: 'help'

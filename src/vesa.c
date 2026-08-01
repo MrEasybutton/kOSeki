@@ -175,7 +175,7 @@ int vesa_init(uint32 width, uint32 height, uint32 bpp) {
     printf("\ngot info!");
 
     g_selected_mode = vbe_srcmodes(width, height, bpp);
-    kprint("searching for mode %dx%d@%dbpp\n", width, height, bpp);
+    kprint("\nsearching for mode %dx%d@%dbpp\n", width, height, bpp);
     printf("\nfound: %d\n", g_selected_mode);
     if (g_selected_mode == -1) {
         printf("failed to find mode for %d-%d\n", width, height);

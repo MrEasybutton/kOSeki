@@ -18,6 +18,7 @@ static BOOL g_alt_pressed = FALSE;
 static BOOL g_key_states[256];
 volatile unsigned char g_ch = 0;
 volatile char g_scan_code = 0;
+static volatile BOOL g_inp_ready = FALSE;
 extern uint8 g_video_mode;
 
 char g_scan_code_chars[128] = {
@@ -29,12 +30,19 @@ char g_scan_code_chars[128] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0
 };
 
+#define PS2_STATUS_OUTPUT_FULL (1 << 0)
+#define PS2_STATUS_AUX_DATA (1 << 5)
 
 static int get_scancode() {
     int i, scancode = 0;
 
     for (i = 1000; i > 0; i--) {
-        if ((inportb(KEYBOARD_STATUS_PORT) & 1) == 0) continue;
+        uint8 s = inportb(KEYBOARD_STATUS_PORT);
+        if (!(s & PS2_STATUS_OUTPUT_FULL)) continue;
+        if (s & PS2_STATUS_AUX_DATA) {
+            (void)inportb(KEYBOARD_DATA_PORT);
+            continue;
+        }
         scancode = inportb(KEYBOARD_DATA_PORT);
         break;
     }
@@ -73,6 +81,7 @@ void keyboard_handler(REGISTERS *r) {
     int scancode;
 
     scancode = get_scancode();
+    if (!g_inp_ready) return;
     g_scan_code = scancode;
 
     if (scancode & 0x80) {
@@ -193,6 +202,19 @@ void keyboard_handler(REGISTERS *r) {
 void keyboard_init() {
     register_interrupt_handler(IRQ_BASE + 1, keyboard_handler);
     pic8259_unmask(1);
+}
+
+void keyboard_is_ready(BOOL ready) {
+    g_inp_ready = ready;
+    if (ready) {
+        memset(g_key_states, 0, sizeof(g_key_states));
+        g_caps_lock = FALSE;
+        g_shift_pressed = FALSE;
+        g_ctrl_pressed = FALSE;
+        g_alt_pressed = FALSE;
+        g_ch = 0;
+        g_scan_code = 0;
+    }
 }
 
 //blocking

@@ -166,6 +166,8 @@ void pebbleshell(Window* win) {
     }
 
     int lines_rendered = 0;
+    uint32 default_color = RGB(255, 255, 255);
+    uint32 cur_color = default_color;
     while (*render_ptr != '\0' && 
            lines_rendered < max_visible_lines && 
            (draw_y + font_height) <= (content_y + content_height - 5)) {
@@ -235,8 +237,6 @@ void pebbleshell(Window* win) {
         }
         line_buf[lbuf_len] = '\0';
         if (lbuf_len > 0) {
-            uint32 default_color = RGB(255, 255, 255);
-            uint32 cur_color = default_color;
             int idx = 0;
             int seg_start = 0;
 

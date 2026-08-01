@@ -43,7 +43,7 @@ static void e1000_handler(REGISTERS *r) {
     
     if (status & (1 << 2)) { // LSC
         uint32 s = e1000_read(E1000_REG_STATUS);
-        kprint("E1000: Link Changed: %s\n", (s & (1 << 1)) ? "UP" : "DOWN");
+        kprint("[E1000] Link Changed: %s\n", (s & (1 << 1)) ? "UP" : "DOWN");
     }
 
     // process if rx set
@@ -86,7 +86,7 @@ static void e1000_detect_mac() {
         mac[5] = (high >> 8) & 0xFF;
     }
 
-    kprint("E1000: MAC Address: %02x:%02x:%02x:%02x:%02x:%02x\n",
+    kprint("[E1000] MAC Address: %02x:%02x:%02x:%02x:%02x:%02x\n",
                   mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 
@@ -141,7 +141,7 @@ void e1000_init_tx() {
 }
 
 void e1000_init(uint8 bus, uint8 slot, uint8 func) {
-    kprint("E1000: Initializing at %02x:%02x.%d\n", bus, slot, func);
+    kprint("[E1000] Initializing at %02x:%02x.%d\n", bus, slot, func);
 
     pci_enable_bus_mastering(bus, slot, func);
     pci_bar_t bar = pci_get_bar(bus, slot, func, 0);
@@ -152,7 +152,7 @@ void e1000_init(uint8 bus, uint8 slot, uint8 func) {
     }
 
     mmio_base = bar.base_address;
-    kprint("E1000: MMIO Base: 0x%x, Size: %d bytes\n", mmio_base, bar.size);
+    kprint("[E1000] MMIO Base: 0x%x, Size: %d bytes\n", mmio_base, bar.size);
 
     e1000_write(E1000_REG_CTRL, E1000_CTRL_RST);
     while (e1000_read(E1000_REG_CTRL) & E1000_CTRL_RST);
@@ -173,7 +173,7 @@ void e1000_init(uint8 bus, uint8 slot, uint8 func) {
     net_init(mac);
 
     uint8 irq = (uint8)(pci_config_read_word(bus, slot, func, 0x3C) & 0xFF);
-    kprint("E1000: Using IRQ %d\n", irq);
+    kprint("[E1000] Using IRQ %d\n", irq);
     register_interrupt_handler(IRQ_BASE + irq, e1000_handler);
     pic8259_unmask(irq);
 
@@ -181,7 +181,7 @@ void e1000_init(uint8 bus, uint8 slot, uint8 func) {
     e1000_read(E1000_REG_ICR);
     
     uint32 status = e1000_read(E1000_REG_STATUS);
-    kprint("E1000: status: 0x%x (Link %s)\n", status, (status & (1 << 1)) ? "UP" : "DOWN");
+    kprint("[E1000] status: 0x%x (Link %s)\n", status, (status & (1 << 1)) ? "UP" : "DOWN");
 }
 
 void e1000_send_packet(void* data, uint16 length) {

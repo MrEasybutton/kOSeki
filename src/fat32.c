@@ -270,7 +270,7 @@ void make_sfn(const char *src, char dest[12]) {
 }
 
 FAT_dirent* fat_find_in_dir(char* fname, int cluster) {
-    kprint("fat_find_in_dir: fname='%s', cluster=%d\n", fname, cluster);
+    kprint("[FAT: find_in_dir] fname='%s', cluster=%d\n", fname, cluster);
     uint8* cluster_buf = load_cluster(cluster);
     uint32 record_offset = 0;
     uint32 LFN_index = 0;
@@ -281,12 +281,12 @@ FAT_dirent* fat_find_in_dir(char* fname, int cluster) {
     memset(SFN_entry, 0, 12);
 
     make_sfn(fname, fname_upper);
-    kprint("fat_find_in_dir: fname_upper(SFN padded)='%11s'\n", fname_upper);
+    // kprint("[FAT: find_in_dir] fname_upper(SFN padded)='%11s'\n", fname_upper);
 
 
     while(TRUE) {
         if(cluster_buf[record_offset] == 0) {
-            kprint("fat_find_in_dir: End of directory, break.\n");
+            kprint("[FAT: find_in_dir] End of directory, break.\n");
             kfree(cluster_buf);
             cluster_buf = NULL;
             break;
@@ -328,7 +328,7 @@ FAT_dirent* fat_find_in_dir(char* fname, int cluster) {
                     FAT_dirent* dirent = kmalloc(sizeof(FAT_dirent));
                     memcpy(dirent, cluster_buf + record_offset, sizeof(FAT_dirent));
                     kfree(cluster_buf);
-                    kprint("fat_find_in_dir: Dirent found: %s\n", LFN[0] == 0 ? SFN_entry : LFN);
+                    // kprint("[FAT: find_in_dir] Dirent found: %s\n", LFN[0] == 0 ? SFN_entry : LFN);
                     return dirent;
                 }
                 memset(LFN, 0, MAX_FILENAME_LEN + 1); // clear after proc sfn
@@ -341,7 +341,7 @@ FAT_dirent* fat_find_in_dir(char* fname, int cluster) {
         record_offset += 32;
         if(record_offset == (g_fat_bpb->sectors_per_cluster * g_fat_bpb->bytes_per_sector)) {
             uint32 next_cluster = fat_get_next_clu(cluster);
-            kprint("fat_find_in_dir: End of cluster. Next cluster: %d\n", next_cluster);
+            kprint("[FAT: find_in_dir] End of cluster. Next cluster: %d\n", next_cluster);
             if(next_cluster == (uint32)-1) {
                 kfree(cluster_buf);
                 cluster_buf = NULL;
@@ -362,7 +362,7 @@ FAT_dirent* fat_find_in_dir(char* fname, int cluster) {
 
     if (cluster_buf) kfree(cluster_buf);
 
-    kprint("fat_find_in_dir: Dirent not found.\n");
+    kprint("[FAT: find_in_dir] Dirent not found.\n");
     return NULL;
 }
 
@@ -442,7 +442,7 @@ static uint32 fat_find_free_slot(uint32 dir_cluster, int* out_offset) {
 }
 
 FAT_dirent* fat_find_file(const char* path) {
-    kprint("fat_find_file: Searching for path: '%s'\n", path);
+    kprint("[FAT: find] Searching for path: '%s'\n", path);
     uint32 current_cluster = 2;
     FAT_dirent* dirent = NULL;
 
@@ -454,7 +454,7 @@ FAT_dirent* fat_find_file(const char* path) {
             dirent->FirstClusterLow = 2;
             dirent->FirstClusterHigh = 0;
         }
-        kprint("fat_find_file: Found root directory.\n");
+        kprint("[FAT: find] Found root directory.\n");
         return dirent;
     }
 
@@ -471,7 +471,7 @@ FAT_dirent* fat_find_file(const char* path) {
         char temp = *seg_end;
         *seg_end = '\0';
 
-        kprint("fat_find_file: Searching segment: '%s' in cluster %d\n", seg_start, current_cluster);
+        // kprint("[FAT: find] Searching segment: '%s' in cluster %d\n", seg_start, current_cluster);
         if (dirent) {
             kfree(dirent);
             dirent = NULL;
@@ -479,18 +479,18 @@ FAT_dirent* fat_find_file(const char* path) {
         dirent = fat_find_in_dir(seg_start, current_cluster);
 
         if (dirent == NULL) {
-            kprint("fat_find_file: Segment '%s' NOT found.\n", seg_start);
+            kprint("[FAT: find] Segment '%s' NOT found.\n", seg_start);
             kfree(path_copy);
             return NULL;
         }
 
-        kprint("fat_find_file: Segment '%s' found. Attributes: 0x%x\n", seg_start, dirent->Attributes);
+        // kprint("[FAT: find] Segment '%s' found. Attributes: 0x%x\n", seg_start, dirent->Attributes);
 
         if ((dirent->Attributes & 0x10) && (temp != '\0')) {
             current_cluster = (dirent->FirstClusterHigh << 16) | dirent->FirstClusterLow;
-            kprint("fat_find_file: Moving to next directory cluster: %d\n", current_cluster);
+            //kprint("[FAT: find] Moving to next directory cluster: %d\n", current_cluster);
         } else if (!(dirent->Attributes & 0x10) && (temp != '\0')) {
-            kprint("fat_find_file: Found file '%s' but more path segments remain.\n", seg_start);
+            kprint("[FAT: find] Found file '%s' but more path segments remain.\n", seg_start);
             kfree(dirent);
             kfree(path_copy);
             return NULL;
@@ -504,15 +504,15 @@ FAT_dirent* fat_find_file(const char* path) {
     }
 
     kfree(path_copy);
-    kprint("fat_find_file: Returning dirent for '%s'\n", path);
+    kprint("[FAT: find] Returning dirent for '%s'\n", path);
     return dirent;
 }
 
 char* fat_read_file(char* fpath) {
-    kprint("fat_read_file: Reading file: '%s'\n", fpath);
+    kprint("[FAT: read] Reading file: '%s'\n", fpath);
     FAT_dirent* dirent = fat_find_file(fpath);
     if (!dirent) {
-        kprint("fat_read_file: dirent NULL for '%s'\n", fpath);
+        kprint("[FAT: read] dirent NULL for '%s'\n", fpath);
         return NULL;
     }
 
@@ -520,13 +520,13 @@ char* fat_read_file(char* fpath) {
     uint32 file_size = dirent->Size;
     kfree(dirent);
 
-    kprint("fat_read_file: File '%s' (cluster: %d, size: %d)\n", fpath, file_clu, file_size);
+    kprint("[FAT: read] '%s' (cluster: %d, size: %d)\n", fpath, file_clu, file_size);
 
     if (file_size == 0) {
         char* empty = kmalloc(1);
         if (!empty) return NULL;
         empty[0] = '\0';
-        kprint("fat_read_file: File '%s' is empty.\n", fpath);
+        kprint("[FAT: read] '%s' is empty.\n", fpath);
         return empty;
     }
 
@@ -561,7 +561,7 @@ char* fat_read_file(char* fpath) {
             file_clu = fat_get_next_clu(file_clu);
     }
     kfree(cluster_temp);
-    kprint("fat_read_file: Finished reading '%s'.\n", fpath);
+    kprint("[FAT: read] Finished reading '%s'.\n", fpath);
     return file_buf;
 }
 

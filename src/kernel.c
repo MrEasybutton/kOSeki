@@ -539,12 +539,12 @@ void kmain(unsigned long magic __attribute__((unused)), unsigned long addr) {
     extern void tester();
     tester();
     ac97_play("/SYSTEM/startup.wav");
-
     keyboard_init();
     mouse_init();
 
     net_send_arp_req(htonl((10 << 24) | (0 << 16) | (2 << 8) | 2));
     net_ping(htonl((10 << 24) | (0 << 16) | (2 << 8) | 2));
+    keyboard_is_ready(TRUE); // input gate might not be the best fix moving forward but beep it
 
     for (;;) {
         unsigned char c = (unsigned char)kb_getchar_nb();
@@ -558,7 +558,7 @@ void kmain(unsigned long magic __attribute__((unused)), unsigned long addr) {
                     is_dirty(TRUE);
                 } else {
                     Process* p = get_process(active_window->pid);
-                    if (p) kprint(" Process name: %s\n", p->name);
+                    // if (p) kprint(" Process name: %s\n", p->name);
                     if (p && p->name && strcmp(p->name, "pbsh") == 0) {
                         if (c == '`' || c == '|') {
                             pbsh_handle_scroll(active_window, c == '`' ? -5 : 5);
